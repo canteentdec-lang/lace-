@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: var(--color-indigo-600);
+  --color-primary-hover: var(--color-indigo-700);
+  --color-bg-soft: var(--color-slate-50);
+  --color-surface: #ffffff;
+  --color-text-main: var(--color-slate-900);
+  --color-text-muted: var(--color-slate-500);
+}
+
+body {
+  @apply bg-bg-soft text-text-main antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+}
