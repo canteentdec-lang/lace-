@@ -12,6 +12,13 @@ export function formatCurrency(amount: number) {
   }).format(amount);
 }
 
+export function formatAmount(amount: number) {
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export function formatDate(date: string | Date) {
   return new Date(date).toLocaleDateString('en-IN', {
     day: '2-digit',

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Attendance, Challan, Party, Employee } from '../../types';
 import { Search, Calendar, User, Building2, FileText, Download, Loader2, BarChart3 } from 'lucide-react';
-import { formatDate, formatCurrency } from '../../lib/utils';
+import { formatDate, formatCurrency, formatAmount } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -86,7 +86,9 @@ export default function Reports() {
       doc.setFontSize(10);
       doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 30);
       if (kataiFilters.startDate || kataiFilters.endDate) {
-        doc.text(`Period: ${kataiFilters.startDate || 'Start'} to ${kataiFilters.endDate || 'End'}`, 20, 35);
+        const start = kataiFilters.startDate ? formatDate(kataiFilters.startDate) : 'Start';
+        const end = kataiFilters.endDate ? formatDate(kataiFilters.endDate) : 'End';
+        doc.text(`Period: ${start} to ${end}`, 20, 35);
       }
 
       const tableData = kataiRecords.map(r => [
@@ -97,12 +99,16 @@ export default function Reports() {
         r.mtr_type || '-'
       ]);
 
+      const totalKatai = kataiRecords.reduce((sum, r) => sum + (r.katai || 0), 0);
+
       autoTable(doc, {
         startY: 40,
         head: [['Date', 'Employee', 'Shift', 'Katai', 'MTR Type']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229] } // Indigo 600
+        headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
+        foot: [['', '', 'Total Katai', totalKatai, '']],
+        footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
       });
 
       doc.save('Katai_Report.pdf');
@@ -126,21 +132,30 @@ export default function Reports() {
       doc.setFontSize(18);
       doc.text('Challan Summary Report', 105, 20, { align: 'center' });
       doc.setFontSize(10);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 30);
+      
+      if (challanFilters.startDate || challanFilters.endDate) {
+        const start = challanFilters.startDate ? formatDate(challanFilters.startDate) : 'Start';
+        const end = challanFilters.endDate ? formatDate(challanFilters.endDate) : 'End';
+        doc.text(`Period: ${start} to ${end}`, 20, 30);
+      }
 
       const tableData = challanRecords.map(r => [
         r.challan_no,
         formatDate(r.date),
         r.party?.name || 'N/A',
-        formatCurrency(r.total_amount)
+        formatAmount(r.total_amount)
       ]);
 
+      const totalSum = challanRecords.reduce((sum, r) => sum + (r.total_amount || 0), 0);
+
       autoTable(doc, {
-        startY: 40,
+        startY: 35,
         head: [['Challan No', 'Date', 'Party', 'Total Amount']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [79, 70, 229] } // Indigo 600
+        headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
+        foot: [['', '', 'Final Total', formatAmount(totalSum)]],
+        footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
       });
 
       doc.save('Challan_Report.pdf');

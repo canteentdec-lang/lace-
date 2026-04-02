@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Challan, Party, Product, ChallanItem } from '../../types';
 import { Plus, Search, FileText, Download, Trash2, X, Loader2, ArrowLeft, PlusCircle, MinusCircle, Edit2 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatCurrency, formatDate, formatAmount } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -186,8 +186,8 @@ export default function ChallanSystem() {
         i + 1,
         item.product_name,
         item.quantity,
-        formatCurrency(item.price),
-        formatCurrency(item.total)
+        formatAmount(item.price),
+        formatAmount(item.total)
       ]);
 
       autoTable(doc, {
@@ -196,7 +196,7 @@ export default function ChallanSystem() {
         body: tableData,
         theme: 'grid',
         headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
-        foot: [['', '', '', 'Grand Total', formatCurrency(challan.total_amount)]],
+        foot: [['', '', '', 'Grand Total', formatAmount(challan.total_amount)]],
         footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
       });
 
