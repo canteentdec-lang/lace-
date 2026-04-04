@@ -7,6 +7,14 @@ import PartyManagement from './admin/PartyManagement';
 import ProductManagement from './admin/ProductManagement';
 import ChallanSystem from './admin/ChallanSystem';
 import Reports from './admin/Reports';
+import PurchaseSystem from './admin/PurchaseSystem';
+import PurchasePayments from './admin/PurchasePayments';
+import SalesPayments from './admin/SalesPayments';
+import PartyLedger from './admin/PartyLedger';
+import BillSystem from './admin/BillSystem';
+import ExpenseManagement from './admin/ExpenseManagement';
+import SalarySystem from './admin/SalarySystem';
+import Settings from './admin/Settings';
 
 interface AdminDashboardProps {
   currentView: string;
@@ -28,6 +36,22 @@ export default function AdminDashboard({ currentView, setCurrentView }: AdminDas
         return <ProductManagement />;
       case 'challans':
         return <ChallanSystem />;
+      case 'purchases':
+        return <PurchaseSystem />;
+      case 'purchase_payments':
+        return <PurchasePayments />;
+      case 'sales_payments':
+        return <SalesPayments />;
+      case 'ledger':
+        return <PartyLedger />;
+      case 'bills':
+        return <BillSystem onNavigate={setCurrentView} />;
+      case 'expenses':
+        return <ExpenseManagement />;
+      case 'salary':
+        return <SalarySystem />;
+      case 'settings':
+        return <Settings />;
       case 'reports':
         return <Reports />;
       default:

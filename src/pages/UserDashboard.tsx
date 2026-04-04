@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { AuthUser, Attendance } from '../types';
+import { AuthUser, Attendance, Employee } from '../types';
 import { Play, Square, Loader2, CheckCircle2, Clock, TrendingUp } from 'lucide-react';
 import { formatTime, formatDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,77 +19,194 @@ export default function UserDashboard({ user }: UserDashboardProps) {
   const [formData, setFormData] = useState({
     shift: 'day',
     katai: '',
-    mtr_type: '17',
+    mtr_type: '',
     custom_mtr: ''
   });
 
+  const [calculatedQuantity, setCalculatedQuantity] = useState<number>(0);
+  const [employeeData, setEmployeeData] = useState<any>(null);
+
   useEffect(() => {
     fetchActiveRecord();
+    fetchEmployeeData();
   }, []);
+
+  const fetchEmployeeData = async () => {
+    const { data } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('user_id', user.user_id)
+      .single();
+    if (data) {
+      setEmployeeData(data);
+      if (data.default_mts) {
+        setFormData(prev => ({ ...prev, mtr_type: data.default_mts.toString() }));
+      }
+    }
+  };
+
+  useEffect(() => {
+    calculateProduction();
+  }, [formData.katai, formData.mtr_type, formData.custom_mtr]);
+
+  const calculateProduction = () => {
+    const katay = parseInt(formData.katai) || 0;
+    const mtrType = formData.mtr_type === 'custom' ? parseFloat(formData.custom_mtr) : parseFloat(formData.mtr_type);
+    
+    if (katay > 0 && mtrType > 0) {
+      const totalProduct = Math.round(katay * mtrType);
+      setCalculatedQuantity(totalProduct);
+    } else {
+      setCalculatedQuantity(0);
+    }
+  };
 
   const fetchActiveRecord = async () => {
     setIsLoading(true);
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('user_id', user.user_id)
-      .eq('date', today)
-      .is('logout_time', null)
-      .single();
+    try {
+      // Find ANY open record for this user
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('user_id', user.user_id)
+        .is('logout_time', null)
+        .order('login_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (data) setActiveRecord(data);
-    else setActiveRecord(null);
-    setIsLoading(false);
+      if (data) {
+        const now = new Date();
+        const loginTime = new Date(data.login_time!);
+        const diffHrs = (now.getTime() - loginTime.getTime()) / (1000 * 60 * 60);
+
+        // If session is older than 13 hours, auto-close it
+        if (diffHrs > 13) {
+          const autoLogoutTime = new Date(loginTime.getTime() + 13 * 60 * 60 * 1000);
+          await supabase
+            .from('attendance')
+            .update({
+              logout_time: autoLogoutTime.toISOString(),
+              total_hours: 13,
+              remarks: 'Exit by Default (13h limit)'
+            })
+            .eq('id', data.id);
+          
+          setActiveRecord(null);
+        } else {
+          setActiveRecord(data);
+        }
+      } else {
+        setActiveRecord(null);
+      }
+    } catch (error) {
+      console.error('Error fetching active record:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleStartWork = async () => {
+    console.log('handleStartWork triggered');
+    if (!user || !user.user_id) {
+      alert('User ID not found. Please logout and login again.');
+      return;
+    }
+
     setIsSubmitting(true);
-    const now = new Date();
-    const { data, error } = await supabase
-      .from('attendance')
-      .insert([{
+    try {
+      const now = new Date();
+      const payload = {
         user_id: user.user_id,
         date: now.toISOString().split('T')[0],
         login_time: now.toISOString(),
-      }])
-      .select()
-      .single();
+        shift: 'day', // Provide a default shift
+        katai: 0,
+        mtr_type: employeeData?.default_mts?.toString() || '17'
+      };
 
-    if (data) setActiveRecord(data);
-    setIsSubmitting(false);
+      console.log('Inserting attendance record:', payload);
+      
+      const { data, error } = await supabase
+        .from('attendance')
+        .insert([payload])
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase error starting work:', error);
+        throw error;
+      }
+      
+      if (data) {
+        console.log('Attendance record created:', data);
+        setActiveRecord(data);
+      } else {
+        throw new Error('No data returned from insert');
+      }
+    } catch (error: any) {
+      console.error('Error in handleStartWork:', error);
+      alert('काम शुरू करने में त्रुटि: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEndWork = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRecord) return;
+    if (!formData.mtr_type) return alert('कृपया MTR चुनें!');
     setIsSubmitting(true);
 
-    const logoutTime = new Date();
-    const loginTime = new Date(activeRecord.login_time!);
-    const diffMs = logoutTime.getTime() - loginTime.getTime();
-    const diffHrs = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100; // Rounded to 2 decimal places
+    try {
+      const logoutTime = new Date();
+      const loginTime = new Date(activeRecord.login_time!);
+      const diffMs = logoutTime.getTime() - loginTime.getTime();
+      const diffHrs = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
-    const { error } = await supabase
-      .from('attendance')
-      .update({
-        logout_time: logoutTime.toISOString(),
-        total_hours: diffHrs,
-        shift: formData.shift,
-        katai: parseInt(formData.katai),
-        mtr_type: formData.mtr_type === 'custom' ? formData.custom_mtr : formData.mtr_type
-      })
-      .eq('id', activeRecord.id);
+      const finalMtr = formData.mtr_type === 'custom' ? parseFloat(formData.custom_mtr) : parseFloat(formData.mtr_type);
 
-    if (!error) {
+      // 1. Update Attendance
+      const { error: attError } = await supabase
+        .from('attendance')
+        .update({
+          logout_time: logoutTime.toISOString(),
+          total_hours: diffHrs,
+          shift: formData.shift,
+          katai: parseInt(formData.katai),
+          mtr_type: finalMtr.toString()
+        })
+        .eq('id', activeRecord.id);
+
+      if (attError) throw attError;
+
+      // 2. Record Production
+      await supabase.from('production').insert([{
+        attendance_id: activeRecord.id,
+        mts: calculatedQuantity
+      }]);
+
+      // 3. Update Employee Default MTS
+      if (employeeData && finalMtr) {
+        await supabase
+          .from('employees')
+          .update({ default_mts: finalMtr })
+          .eq('id', employeeData.id);
+        
+        // Refresh employee data
+        fetchEmployeeData();
+      }
+
       setActiveRecord(null);
       setShowForm(false);
-      setFormData({ shift: 'day', katai: '', mtr_type: '17', custom_mtr: '' });
+      setFormData({ shift: 'day', katai: '', mtr_type: employeeData?.default_mts?.toString() || '', custom_mtr: '' });
+      setCalculatedQuantity(0);
       alert('काम सफलतापूर्वक सहेजा गया!');
-    } else {
+    } catch (error) {
+      console.error('Error saving work:', error);
       alert('कुछ गलत हो गया। कृपया फिर से प्रयास करें।');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   if (isLoading) {
@@ -171,48 +288,59 @@ export default function UserDashboard({ user }: UserDashboardProps) {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">कटाई की संख्या (Katai)</label>
-                    <input
-                      type="number"
-                      required
-                      value={formData.katai}
-                      onChange={(e) => setFormData({ ...formData, katai: e.target.value })}
-                      className="w-full px-4 py-4 border-2 border-gray-100 rounded-xl focus:border-primary outline-none text-lg font-bold"
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">MTR प्रति कटाई</label>
-                    <select
-                      value={formData.mtr_type}
-                      onChange={(e) => setFormData({ ...formData, mtr_type: e.target.value })}
-                      className="w-full px-4 py-4 border-2 border-gray-100 rounded-xl focus:border-primary outline-none text-lg font-bold bg-white"
-                    >
-                      <option value="17">17</option>
-                      <option value="24">24</option>
-                      <option value="36">36</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </div>
-
-                  {formData.mtr_type === 'custom' && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                    >
-                      <label className="block text-sm font-bold text-gray-700 mb-2">कस्टम MTR दर्ज करें</label>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">कटाई की संख्या (Katai)</label>
                       <input
-                        type="text"
+                        type="number"
                         required
-                        value={formData.custom_mtr}
-                        onChange={(e) => setFormData({ ...formData, custom_mtr: e.target.value })}
+                        value={formData.katai}
+                        onChange={(e) => setFormData({ ...formData, katai: e.target.value })}
                         className="w-full px-4 py-4 border-2 border-gray-100 rounded-xl focus:border-primary outline-none text-lg font-bold"
-                        placeholder="Enter custom MTR"
+                        placeholder="0"
                       />
-                    </motion.div>
-                  )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">MTR प्रति कटाई (MTS)</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['17', '24', '36'].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, mtr_type: val })}
+                            className={`py-3 rounded-xl font-bold border-2 transition-all ${formData.mtr_type === val ? 'border-primary bg-primary text-white' : 'border-gray-100 text-gray-500'}`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, mtr_type: 'custom' })}
+                          className={`py-3 rounded-xl font-bold border-2 transition-all ${formData.mtr_type === 'custom' ? 'border-primary bg-primary text-white' : 'border-gray-100 text-gray-500'}`}
+                        >
+                          Custom
+                        </button>
+                      </div>
+                    </div>
+
+                    {formData.mtr_type === 'custom' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                      >
+                        <label className="block text-sm font-bold text-gray-700 mb-2">कस्टम MTR दर्ज करें</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.custom_mtr}
+                          onChange={(e) => setFormData({ ...formData, custom_mtr: e.target.value })}
+                          className="w-full px-4 py-4 border-2 border-gray-100 rounded-xl focus:border-primary outline-none text-lg font-bold"
+                          placeholder="Enter custom MTR"
+                        />
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-3">

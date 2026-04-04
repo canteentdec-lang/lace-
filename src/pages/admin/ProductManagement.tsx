@@ -10,59 +10,152 @@ export default function ProductManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
-    price: '',
-    gst_percent: ''
+    base_price: '',
+    bill_price: '',
+    challan_price: '',
+    gst_percent: '',
+    gst_applicable: true,
+    type: 'sell' as 'purchase' | 'sell',
+    product_mts: '',
+    patti_mts: ''
   });
+  const [typeFilter, setTypeFilter] = useState<'all' | 'purchase' | 'sell'>('all');
 
   useEffect(() => {
+    console.log('ProductManagement mounted');
     fetchProducts();
   }, []);
 
   const fetchProducts = async () => {
+    console.log('fetchProducts called');
     setIsLoading(true);
-    const { data } = await supabase.from('products').select('*').order('name', { ascending: true });
-    if (data) setProducts(data);
-    setIsLoading(false);
+    try {
+      const { data, error } = await supabase.from('products').select('*').order('name', { ascending: true });
+      if (error) throw error;
+      if (data) {
+        console.log('Products fetched:', data.length);
+        setProducts(data);
+      }
+    } catch (error: any) {
+      console.error('Error fetching products:', error);
+      alert('Error loading products: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleOpenModal = (product?: Product) => {
+    console.log('handleOpenModal called', product ? 'editing' : 'new');
+    setErrorMsg(null);
     if (product) {
       setEditingProduct(product);
       setFormData({
         name: product.name,
-        price: product.price.toString(),
-        gst_percent: product.gst_percent.toString()
+        base_price: (product.base_price || product.price || 0).toString(),
+        bill_price: (product.bill_price || 0).toString(),
+        challan_price: (product.challan_price || 0).toString(),
+        gst_percent: product.gst_percent.toString(),
+        gst_applicable: product.gst_applicable ?? true,
+        type: product.type || 'sell',
+        product_mts: product.product_mts?.toString() || '',
+        patti_mts: product.patti_mts?.toString() || ''
       });
     } else {
       setEditingProduct(null);
-      setFormData({ name: '', price: '', gst_percent: '' });
+      setFormData({ 
+        name: '', 
+        base_price: '', 
+        bill_price: '', 
+        challan_price: '', 
+        gst_percent: '', 
+        gst_applicable: true, 
+        type: 'sell', 
+        product_mts: '', 
+        patti_mts: '' 
+      });
     }
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('handleSubmit called', formData);
+    setErrorMsg(null);
     setIsLoading(true);
-    const payload = {
-      name: formData.name,
-      price: parseFloat(formData.price),
-      gst_percent: parseFloat(formData.gst_percent)
-    };
-
+    
     try {
-      if (editingProduct) {
-        await supabase.from('products').update(payload).eq('id', editingProduct.id);
-      } else {
-        await supabase.from('products').insert([payload]);
+      console.log('Checking Supabase client...');
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized');
       }
+
+      console.log('Testing Supabase connection...');
+      const { error: testError } = await supabase.from('products').select('id').limit(1);
+      if (testError) {
+        console.error('Supabase connection test failed:', testError);
+        throw new Error('Database connection failed: ' + testError.message);
+      }
+      console.log('Connection test passed');
+      console.log('Form data before payload:', formData);
+
+      const base_price = parseFloat(formData.base_price);
+      const bill_price = parseFloat(formData.bill_price);
+      const challan_price = parseFloat(formData.challan_price);
+      const gst_percent = parseFloat(formData.gst_percent);
+      
+      if (isNaN(base_price) || isNaN(gst_percent)) {
+        throw new Error('Please enter valid numbers for Base Price and GST %');
+      }
+
+      const payload = {
+        name: formData.name,
+        price: base_price, // Keeping legacy price as base_price
+        base_price: base_price,
+        bill_price: bill_price || 0,
+        challan_price: challan_price || 0,
+        gst_percent: gst_percent,
+        gst_applicable: formData.gst_applicable,
+        type: formData.type,
+        product_mts: parseFloat(formData.product_mts) || 0,
+        patti_mts: parseFloat(formData.patti_mts) || 0
+      };
+
+      console.log('Sending payload to Supabase:', payload);
+
+      // Add a timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database request timed out after 10 seconds')), 10000)
+      );
+
+      const supabasePromise = editingProduct 
+        ? supabase.from('products').update(payload).eq('id', editingProduct.id).select()
+        : supabase.from('products').insert([payload]).select();
+
+      const { data, error }: any = await Promise.race([supabasePromise, timeoutPromise]);
+
+      console.log('Supabase response:', { data, error });
+
+      if (error) {
+        console.error('Supabase error detail:', error);
+        throw error;
+      }
+      
+      console.log('Product saved successfully, closing modal...');
       setIsModalOpen(false);
-      fetchProducts();
-    } catch (error) {
-      console.error('Error saving product:', error);
+      alert('Product saved successfully!');
+      
+      console.log('Refreshing product list...');
+      await fetchProducts();
+    } catch (error: any) {
+      console.error('Detailed error in handleSubmit:', error);
+      const msg = error.message || JSON.stringify(error);
+      setErrorMsg(msg);
     } finally {
+      console.log('handleSubmit finished');
       setIsLoading(false);
     }
   };
@@ -74,24 +167,48 @@ export default function ProductManagement() {
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = typeFilter === 'all' || p.type === typeFilter;
+    return matchesSearch && matchesType;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-        <div className="relative w-full sm:w-96">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-            <Search size={18} />
-          </span>
-          <input
-            type="text"
-            placeholder="Search by product name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all text-sm"
-          />
+      <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+          <div className="relative w-full sm:w-80">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+              <Search size={18} />
+            </span>
+            <input
+              type="text"
+              placeholder="Search by product name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all text-sm"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setTypeFilter('all')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${typeFilter === 'all' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              All
+            </button>
+            <button 
+              onClick={() => setTypeFilter('purchase')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${typeFilter === 'purchase' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              Purchase
+            </button>
+            <button 
+              onClick={() => setTypeFilter('sell')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${typeFilter === 'sell' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              Sell
+            </button>
+          </div>
         </div>
         <button
           onClick={() => handleOpenModal()}
@@ -108,7 +225,10 @@ export default function ProductManagement() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Product Name</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Base Price</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Bill Price</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Challan Price</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">GST %</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
               </tr>
@@ -116,13 +236,13 @@ export default function ProductManagement() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
+                  <td colSpan={5} className="px-6 py-12 text-center">
                     <Loader2 className="animate-spin mx-auto text-gray-400" size={32} />
                   </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
@@ -135,7 +255,14 @@ export default function ProductManagement() {
                         <div className="font-medium text-gray-900">{prod.name}</div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(prod.price)}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${prod.type === 'purchase' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                        {prod.type || 'sell'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(prod.base_price || prod.price)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(prod.bill_price || 0)}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{formatCurrency(prod.challan_price || 0)}</td>
                     <td className="px-6 py-4">
                       <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">{prod.gst_percent}%</span>
                     </td>
@@ -159,19 +286,72 @@ export default function ProductManagement() {
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-medium">
+                  {errorMsg}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: 'purchase' })}
+                    className={`py-2 rounded-xl text-sm font-semibold border-2 transition-all ${formData.type === 'purchase' ? 'border-primary bg-primary text-white' : 'border-gray-100 text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    Purchase Product
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: 'sell' })}
+                    className={`py-2 rounded-xl text-sm font-semibold border-2 transition-all ${formData.type === 'sell' ? 'border-primary bg-primary text-white' : 'border-gray-100 text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    Sell Product
+                  </button>
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
                 <input type="text" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="e.g. Cotton Fabric" />
               </div>
+              
+              {formData.type === 'sell' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Product MTS (Required)</label>
+                    <input type="number" step="0.01" required value={formData.product_mts} onChange={(e) => setFormData({ ...formData, product_mts: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="e.g. 72" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Patti MTS (Required)</label>
+                    <input type="number" step="0.01" required value={formData.patti_mts} onChange={(e) => setFormData({ ...formData, patti_mts: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="e.g. 36" />
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (₹)</label>
-                  <input type="number" step="0.01" required value={formData.price || ''} onChange={(e) => setFormData({ ...formData, price: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="0.00" />
+                  <input type="number" step="0.01" required value={formData.base_price || ''} onChange={(e) => setFormData({ ...formData, base_price: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="0.00" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">GST %</label>
                   <input type="number" step="0.1" required value={formData.gst_percent || ''} onChange={(e) => setFormData({ ...formData, gst_percent: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="5" />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bill Price (₹)</label>
+                  <input type="number" step="0.01" value={formData.bill_price || ''} onChange={(e) => setFormData({ ...formData, bill_price: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="0.00" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Challan Price (₹)</label>
+                  <input type="number" step="0.01" value={formData.challan_price || ''} onChange={(e) => setFormData({ ...formData, challan_price: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="0.00" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="gst_applicable" checked={formData.gst_applicable} onChange={(e) => setFormData({ ...formData, gst_applicable: e.target.checked })} className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary" />
+                <label htmlFor="gst_applicable" className="text-sm font-medium text-gray-700">GST Applicable</label>
               </div>
               <div className="pt-4">
                 <button type="submit" disabled={isLoading} className="w-full bg-primary text-white py-3 rounded-xl font-semibold hover:bg-primary-hover transition-colors disabled:opacity-50">

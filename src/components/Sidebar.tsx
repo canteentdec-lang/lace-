@@ -7,7 +7,15 @@ import {
   Package, 
   FileText, 
   BarChart3, 
-  LogOut 
+  LogOut,
+  ShoppingCart,
+  Warehouse,
+  Receipt,
+  Wallet,
+  Banknote,
+  Cpu,
+  History,
+  Settings as SettingsIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -25,10 +33,18 @@ export default function Sidebar({ user, currentView, setCurrentView, isOpen, onL
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'employees', label: 'Employees', icon: Users },
     { id: 'attendance', label: 'Attendance', icon: Clock },
+    { id: 'salary', label: 'Salary & Advances', icon: Banknote },
     { id: 'parties', label: 'Parties', icon: Building2 },
     { id: 'products', label: 'Products', icon: Package },
+    { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
+    { id: 'purchase_payments', label: 'Purchase Payments', icon: Banknote },
     { id: 'challans', label: 'Challans', icon: FileText },
+    { id: 'bills', label: 'Bills (GST)', icon: Receipt },
+    { id: 'sales_payments', label: 'Sales Payments', icon: Wallet },
+    { id: 'ledger', label: 'Party Ledger', icon: History },
+    { id: 'expenses', label: 'Expenses', icon: Wallet },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ] : [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
@@ -49,11 +65,11 @@ export default function Sidebar({ user, currentView, setCurrentView, isOpen, onL
       )}>
       <div className="h-full flex flex-col">
         <div className="p-6">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Shree Mahalaxmi Lace</h1>
-          <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">{user.role}</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 leading-tight">Shree Mahalaxmi Lace</h1>
+          <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest leading-tight">{user.role}</p>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}

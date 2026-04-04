@@ -1,4 +1,4 @@
--- SQL Schema for Employee Management & Production Tracking App
+-- Complete SQL Schema for ERP System
 
 -- 1. Employees Table
 CREATE TABLE IF NOT EXISTS employees (
@@ -42,7 +42,10 @@ CREATE TABLE IF NOT EXISTS parties (
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  price NUMERIC(10, 2),
+  price NUMERIC(10, 2), -- Legacy
+  base_price NUMERIC(10, 2) DEFAULT 0,
+  bill_price NUMERIC(10, 2) DEFAULT 0,
+  challan_price NUMERIC(10, 2) DEFAULT 0,
   gst_percent NUMERIC(5, 2),
   gst_applicable BOOLEAN DEFAULT true,
   type TEXT CHECK (type IN ('purchase', 'sell')),
@@ -125,6 +128,7 @@ CREATE TABLE IF NOT EXISTS bills (
   subtotal NUMERIC(12, 2) DEFAULT 0,
   total_gst NUMERIC(12, 2) DEFAULT 0,
   grand_total NUMERIC(12, 2) DEFAULT 0,
+  total_profit NUMERIC(12, 2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -136,6 +140,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
   product_name TEXT,
   quantity NUMERIC(10, 2),
   price NUMERIC(10, 2),
+  base_price NUMERIC(10, 2) DEFAULT 0,
   gst_percentage NUMERIC(5, 2),
   gst_amount NUMERIC(12, 2),
   total NUMERIC(12, 2),
@@ -149,6 +154,7 @@ CREATE TABLE IF NOT EXISTS challans (
   party_id UUID REFERENCES parties(id) ON DELETE SET NULL,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   total_amount NUMERIC(12, 2) DEFAULT 0,
+  total_profit NUMERIC(12, 2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -159,6 +165,7 @@ CREATE TABLE IF NOT EXISTS challan_items (
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   product_name TEXT,
   price NUMERIC(10, 2),
+  base_price NUMERIC(10, 2) DEFAULT 0,
   quantity NUMERIC(10, 2),
   total NUMERIC(12, 2),
   created_at TIMESTAMPTZ DEFAULT NOW()

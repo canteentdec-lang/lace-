@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Challan, Party, Product, ChallanItem } from '../../types';
 import { Plus, Search, FileText, Download, Trash2, X, Loader2, ArrowLeft, PlusCircle, MinusCircle, Edit2 } from 'lucide-react';
-import { formatCurrency, formatDate, formatAmount } from '../../lib/utils';
+import { formatCurrency, formatDate, formatAmount, loadImage } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -14,6 +14,9 @@ export default function ChallanSystem() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [partyFilter, setPartyFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Create Challan State
   const [newChallan, setNewChallan] = useState({
@@ -43,12 +46,20 @@ export default function ChallanSystem() {
   };
 
   const fetchParties = async () => {
-    const { data } = await supabase.from('parties').select('*').order('name', { ascending: true });
+    const { data } = await supabase
+      .from('parties')
+      .select('*')
+      .eq('type', 'sell')
+      .order('name', { ascending: true });
     if (data) setParties(data);
   };
 
   const fetchProducts = async () => {
-    const { data } = await supabase.from('products').select('*').order('name', { ascending: true });
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('type', 'sell')
+      .order('name', { ascending: true });
     if (data) setProducts(data);
   };
 
@@ -71,7 +82,8 @@ export default function ChallanSystem() {
       if (product) {
         item.product_id = product.id;
         item.product_name = product.name;
-        item.price = product.price;
+        item.price = product.challan_price || product.price || 0;
+        item.base_price = product.base_price || product.price || 0;
       }
     } else {
       (item as any)[field] = value;
@@ -94,13 +106,19 @@ export default function ChallanSystem() {
     try {
       const totalAmount = calculateTotal();
       
+      // Calculate total profit
+      const totalProfit = items.reduce((sum, item) => {
+        const profitPerItem = (item.price || 0) - (item.base_price || 0);
+        return sum + (profitPerItem * (item.quantity || 0));
+      }, 0);
+
       let challanId = editingChallanId;
 
       if (editingChallanId) {
         // Update Challan
         const { error: challanError } = await supabase
           .from('challans')
-          .update({ ...newChallan, total_amount: totalAmount })
+          .update({ ...newChallan, total_amount: totalAmount, total_profit: totalProfit })
           .eq('id', editingChallanId);
 
         if (challanError) throw challanError;
@@ -111,7 +129,7 @@ export default function ChallanSystem() {
         // Create Challan
         const { data: challanData, error: challanError } = await supabase
           .from('challans')
-          .insert([{ ...newChallan, total_amount: totalAmount }])
+          .insert([{ ...newChallan, total_amount: totalAmount, total_profit: totalProfit }])
           .select()
           .single();
 
@@ -120,20 +138,24 @@ export default function ChallanSystem() {
       }
 
       // Create Items
-      const challanItems = items.map(item => ({
-        challan_id: challanId,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        price: item.price,
-        quantity: item.quantity,
-        total: item.total
-      }));
+      const challanItems = items
+        .filter(item => item.product_id)
+        .map(item => ({
+          challan_id: challanId,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          price: item.price,
+          base_price: item.base_price || 0,
+          quantity: item.quantity,
+          total: item.total
+        }));
 
-      const { error: itemsError } = await supabase
-        .from('challan_items')
-        .insert(challanItems);
-
-      if (itemsError) throw itemsError;
+      if (challanItems.length > 0) {
+        const { error: itemsError } = await supabase
+          .from('challan_items')
+          .insert(challanItems);
+        if (itemsError) throw itemsError;
+      }
 
       setView('list');
       setEditingChallanId(null);
@@ -156,6 +178,8 @@ export default function ChallanSystem() {
         .select('*')
         .eq('challan_id', challan.id);
 
+      const { data: settings } = await supabase.from('settings').select('*').single();
+
       if (!itemsData) {
         setIsExporting(false);
         return;
@@ -165,11 +189,24 @@ export default function ChallanSystem() {
       const party = challan.party;
 
       // Header
+      if (settings?.logo_url && (settings.logo_url.startsWith('http') || settings.logo_url.startsWith('data:'))) {
+        try {
+          const logoBase64 = await loadImage(settings.logo_url);
+          doc.addImage(logoBase64, 'PNG', 15, 10, 30, 30);
+        } catch (e) {
+          console.error('Error adding logo to PDF:', e);
+        }
+      }
+
       doc.setFontSize(22);
       doc.text('CHALLAN', 105, 20, { align: 'center' });
       
       doc.setFontSize(10);
-      doc.text('Shree Mahalaxmi Lace', 20, 30);
+      if (settings) {
+        doc.text(settings.business_name, 20, 30);
+      } else {
+        doc.text('Shree Mahalaxmi Lace', 20, 30);
+      }
       doc.text('Date: ' + formatDate(challan.date), 150, 30);
       doc.text('Challan No: ' + challan.challan_no, 150, 35);
 
@@ -348,20 +385,58 @@ export default function ChallanSystem() {
     );
   }
 
+  const filteredChallans = challans.filter(challan => {
+    const matchesSearch = challan.challan_no.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         challan.party?.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesParty = !partyFilter || challan.party_id === partyFilter;
+    const matchesDateFrom = !dateFrom || challan.date >= dateFrom;
+    const matchesDateTo = !dateTo || challan.date <= dateTo;
+    return matchesSearch && matchesParty && matchesDateFrom && matchesDateTo;
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-        <div className="relative w-full sm:w-96">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-            <Search size={18} />
-          </span>
-          <input
-            type="text"
-            placeholder="Search by challan no or party..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm"
-          />
+      <div className="flex flex-col lg:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+          <div className="relative w-full sm:w-64">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+              <Search size={18} />
+            </span>
+            <input
+              type="text"
+              placeholder="Search challans..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm"
+            />
+          </div>
+
+          <select
+            value={partyFilter}
+            onChange={(e) => setPartyFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm bg-white"
+          >
+            <option value="">All Parties</option>
+            {parties.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
+            />
+            <span className="text-gray-400 text-xs">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
+            />
+          </div>
         </div>
         <button
           onClick={() => {
@@ -386,29 +461,31 @@ export default function ChallanSystem() {
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Party</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Amount</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Profit</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={6} className="px-6 py-12 text-center">
                     <Loader2 className="animate-spin mx-auto text-gray-400" size={32} />
                   </td>
                 </tr>
-              ) : challans.length === 0 ? (
+              ) : filteredChallans.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     No challans found
                   </td>
                 </tr>
               ) : (
-                challans.filter(c => c.challan_no.toLowerCase().includes(searchTerm.toLowerCase()) || c.party?.name.toLowerCase().includes(searchTerm.toLowerCase())).map((challan) => (
+                filteredChallans.map((challan) => (
                   <tr key={challan.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 font-bold text-gray-900">{challan.challan_no}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{challan.party?.name}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{formatDate(challan.date)}</td>
                     <td className="px-6 py-4 text-sm font-bold text-gray-900">{formatCurrency(challan.total_amount)}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-green-600">{formatCurrency(challan.total_profit || 0)}</td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <button 
                         onClick={() => generatePDF(challan)} 

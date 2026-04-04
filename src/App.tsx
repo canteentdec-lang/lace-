@@ -71,7 +71,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-bg-soft text-text-main flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center sticky top-0 z-50">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center sticky top-0 z-50 min-h-[64px]">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -79,16 +79,23 @@ export default function App() {
           >
             {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
-          <h1 className="font-bold text-xl tracking-tight">Shree Mahalaxmi Lace</h1>
+          <h1 className="font-bold text-lg sm:text-xl tracking-tight leading-tight">Shree Mahalaxmi Lace</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden sm:block text-right">
+          <div className="hidden sm:block text-right leading-tight">
             <p className="text-sm font-bold text-gray-900">{user.username}</p>
             <p className="text-xs text-gray-500 uppercase tracking-widest">{user.role}</p>
           </div>
           <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-bold border border-gray-200">
             {user.username[0]}
           </div>
+          <button
+            onClick={handleLogout}
+            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+            title="Logout"
+          >
+            <LogOut size={20} />
+          </button>
         </div>
       </div>
 

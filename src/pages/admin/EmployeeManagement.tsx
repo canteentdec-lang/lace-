@@ -14,7 +14,9 @@ export default function EmployeeManagement() {
   const [formData, setFormData] = useState({
     username: '',
     user_id: '',
-    password: ''
+    password: '',
+    hourly_rate: '',
+    default_mts: ''
   });
 
   useEffect(() => {
@@ -37,11 +39,13 @@ export default function EmployeeManagement() {
       setFormData({
         username: employee.username,
         user_id: employee.user_id,
-        password: employee.password || ''
+        password: employee.password || '',
+        hourly_rate: employee.hourly_rate?.toString() || '',
+        default_mts: employee.default_mts?.toString() || ''
       });
     } else {
       setEditingEmployee(null);
-      setFormData({ username: '', user_id: '', password: '' });
+      setFormData({ username: '', user_id: '', password: '', hourly_rate: '', default_mts: '' });
     }
     setIsModalOpen(true);
   };
@@ -50,16 +54,22 @@ export default function EmployeeManagement() {
     e.preventDefault();
     setIsLoading(true);
 
+    const payload = {
+      ...formData,
+      hourly_rate: formData.hourly_rate ? parseFloat(formData.hourly_rate) : null,
+      default_mts: formData.default_mts ? parseInt(formData.default_mts) : null
+    };
+
     try {
       if (editingEmployee) {
         await supabase
           .from('employees')
-          .update(formData)
+          .update(payload)
           .eq('id', editingEmployee.id);
       } else {
         await supabase
           .from('employees')
-          .insert([formData]);
+          .insert([payload]);
       }
       setIsModalOpen(false);
       fetchEmployees();
@@ -115,6 +125,7 @@ export default function EmployeeManagement() {
               <tr>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">User ID</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Hourly Rate</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Password</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
               </tr>
@@ -139,6 +150,7 @@ export default function EmployeeManagement() {
                       <div className="font-medium text-gray-900">{emp.username}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{emp.user_id}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900">₹{emp.hourly_rate || 0}</td>
                     <td className="px-6 py-4 text-sm text-gray-400 font-mono">••••••••</td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <button 
@@ -206,6 +218,28 @@ export default function EmployeeManagement() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                   placeholder="Enter password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate (₹)</label>
+                <input
+                  type="number"
+                  required
+                  value={formData.hourly_rate}
+                  onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                  placeholder="e.g. 50"
+                  step="0.01"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Default MTS</label>
+                <input
+                  type="number"
+                  value={formData.default_mts}
+                  onChange={(e) => setFormData({ ...formData, default_mts: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                  placeholder="e.g. 17"
                 />
               </div>
               <div className="pt-4">
