@@ -166,8 +166,27 @@ export default function Settings() {
 
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
           {errorMsg && (
-            <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-medium">
-              {errorMsg}
+            <div className="space-y-4">
+              <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-medium">
+                {errorMsg}
+              </div>
+              {errorMsg.includes('Bucket not found') || errorMsg.includes('violates row-level security policy') ? (
+                <div className="p-4 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl text-sm">
+                  <p className="font-bold mb-1">How to fix this in Supabase:</p>
+                  <ol className="list-decimal ml-4 space-y-2">
+                    <li>Go to <b>Storage</b> in your Supabase Dashboard.</li>
+                    <li>Create a new bucket named <b>"logos"</b> and set it to <b>Public</b>.</li>
+                    <li>Click on <b>Policies</b> for the "logos" bucket.</li>
+                    <li>Add a <b>New Policy</b>:
+                      <ul className="list-disc ml-4 mt-1 text-xs space-y-1">
+                        <li>Select <b>"Full access to all users"</b> (or "Allow all operations").</li>
+                        <li>This allows the app to upload and update the logo.</li>
+                      </ul>
+                    </li>
+                    <li>Try uploading your logo again.</li>
+                  </ol>
+                </div>
+              ) : null}
             </div>
           )}
           {successMsg && (

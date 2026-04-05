@@ -26,6 +26,7 @@ export default function AttendanceProduction() {
     shift: 'day' as 'day' | 'night',
     katai: '',
     mtr_type: '17',
+    custom_mtr: '',
     product_id: '',
     remarks: ''
   });
@@ -36,7 +37,10 @@ export default function AttendanceProduction() {
   }, [dateFilter, employeeFilter]);
 
   const fetchEmployees = async () => {
-    const { data } = await supabase.from('employees').select('*').order('username', { ascending: true });
+    const { data } = await supabase
+      .from('employees')
+      .select('id, username, user_id')
+      .order('username', { ascending: true });
     if (data) setEmployees(data);
   };
 
@@ -46,8 +50,8 @@ export default function AttendanceProduction() {
       let query = supabase
         .from('attendance')
         .select(`
-          *,
-          employee:employees(username)
+          id, user_id, employee_id, date, login_time, logout_time, total_hours, shift, katai, mtr_type, remarks, created_at,
+          employee:employees!user_id(username)
         `)
         .order('date', { ascending: false });
 
@@ -59,7 +63,8 @@ export default function AttendanceProduction() {
       }
 
       const { data, error } = await query;
-      console.log('Fetched records:', data);
+      console.log('Fetched raw records count:', data?.length || 0);
+      console.log('Fetched records data:', data);
       if (error) throw error;
       if (data) setRecords(data as any);
     } catch (error: any) {
@@ -96,6 +101,7 @@ export default function AttendanceProduction() {
         shift: record.shift || 'day',
         katai: record.katai?.toString() || '',
         mtr_type: record.mtr_type || '17',
+        custom_mtr: '',
         remarks: record.remarks || ''
       });
     } else {
@@ -108,6 +114,7 @@ export default function AttendanceProduction() {
         shift: 'day',
         katai: '',
         mtr_type: '17',
+        custom_mtr: '',
         remarks: ''
       });
     }
@@ -160,15 +167,19 @@ export default function AttendanceProduction() {
         total_hours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
       }
 
+      const finalMtr = formData.mtr_type === 'custom' ? formData.custom_mtr : formData.mtr_type;
+      const selectedEmployee = employees.find(emp => emp.user_id === formData.user_id);
+
       const payload = {
-        user_id: formData.user_id,
+        user_id: formData.user_id.trim().toLowerCase(),
+        employee_id: selectedEmployee?.id,
         date: formData.date,
         login_time: formData.login_time ? new Date(formData.login_time).toISOString() : null,
         logout_time: formData.logout_time ? new Date(formData.logout_time).toISOString() : null,
         total_hours,
         shift: formData.shift,
         katai: parseInt(formData.katai) || 0,
-        mtr_type: formData.mtr_type,
+        mtr_type: finalMtr,
         remarks: formData.remarks || null
       };
 
@@ -189,7 +200,7 @@ export default function AttendanceProduction() {
         if (error) throw error;
 
         // Update production as well
-        const quantity = calculateProduction(formData.katai, formData.mtr_type);
+        const quantity = calculateProduction(formData.katai, finalMtr);
         await supabase.from('production').upsert({
           attendance_id: editingRecord.id,
           mts: quantity
@@ -205,7 +216,7 @@ export default function AttendanceProduction() {
         attendanceId = data.id;
 
         // Record production
-        const quantity = calculateProduction(formData.katai, formData.mtr_type);
+        const quantity = calculateProduction(formData.katai, finalMtr);
         await supabase.from('production').insert({
           attendance_id: attendanceId,
           mts: quantity
@@ -491,13 +502,39 @@ export default function AttendanceProduction() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">MTR Type</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.mtr_type}
                     onChange={(e) => setFormData({ ...formData, mtr_type: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                    placeholder="e.g. 17"
-                  />
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none bg-white"
+                  >
+                    <option value="17">17</option>
+                    <option value="24">24</option>
+                    <option value="36">36</option>
+                    <option value="171">171</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                {formData.mtr_type === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Custom MTR</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={formData.custom_mtr}
+                      onChange={(e) => setFormData({ ...formData, custom_mtr: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                      placeholder="Enter MTR"
+                    />
+                  </div>
+                )}
+                <div className="md:col-span-2">
+                  <div className="bg-primary/5 p-4 rounded-xl border border-primary/10 flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-600">Production Preview:</span>
+                    <span className="text-lg font-bold text-primary">
+                      {formData.katai || 0} × {formData.mtr_type === 'custom' ? formData.custom_mtr : formData.mtr_type} = {calculateProduction(formData.katai, formData.mtr_type === 'custom' ? formData.custom_mtr : formData.mtr_type)} MTR
+                    </span>
+                  </div>
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Employee, Attendance, Advance } from '../../types';
-import { Search, Loader2, Banknote, Plus, Trash2, X, Download, Calendar, CheckCircle2 } from 'lucide-react';
+import { Employee, Attendance, Advance, SalaryPayment } from '../../types';
+import { Search, Loader2, Banknote, Plus, Trash2, X, Download, Calendar, CheckCircle2, History } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -10,11 +10,15 @@ export default function SalarySystem() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [advances, setAdvances] = useState<Advance[]>([]);
+  const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [confirmPay, setConfirmPay] = useState<Employee | null>(null);
+  const [salaryInput, setSalaryInput] = useState('0');
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
@@ -34,12 +38,14 @@ export default function SalarySystem() {
     setIsLoading(true);
     try {
       const { data: emps } = await supabase.from('employees').select('*').order('username', { ascending: true });
-      const { data: att } = await supabase.from('attendance').select('*').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
-      const { data: adv } = await supabase.from('advances').select('*').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
+      const { data: att } = await supabase.from('attendance').select('*');
+      const { data: adv } = await supabase.from('advances').select('*');
+      const { data: sal } = await supabase.from('salary_payments').select('*').order('date', { ascending: false });
       
       if (emps) setEmployees(emps);
       if (att) setAttendance(att);
       if (adv) setAdvances(adv);
+      if (sal) setSalaryPayments(sal);
     } catch (error) {
       console.error('Error fetching salary data:', error);
     } finally {
@@ -48,8 +54,12 @@ export default function SalarySystem() {
   };
 
   const calculateSalary = (employee: Employee) => {
-    const empAttendance = attendance.filter(a => a.employee_id === employee.id || a.user_id === employee.user_id);
-    const empAdvances = advances.filter(a => a.employee_id === employee.id);
+    // Find last salary payment date for this employee
+    const lastPayment = salaryPayments.find(p => p.employee_id === employee.id);
+    const lastPaymentDate = lastPayment ? new Date(lastPayment.date) : new Date(0);
+
+    const empAttendance = attendance.filter(a => (a.employee_id === employee.id || a.user_id === employee.user_id) && new Date(a.date) > lastPaymentDate);
+    const empAdvances = advances.filter(a => a.employee_id === employee.id && new Date(a.date) > lastPaymentDate);
     
     let totalHours = 0;
     empAttendance.forEach(a => {
@@ -66,9 +76,11 @@ export default function SalarySystem() {
     const roundedHours = Math.round(totalHours * 2) / 2; // Round to nearest 0.5
     const grossSalary = roundedHours * (employee.hourly_rate || 0);
     const totalAdvances = empAdvances.reduce((sum, a) => sum + a.amount, 0);
-    const netSalary = grossSalary - totalAdvances;
+    
+    // Default base salary is grossSalary, but user can override in form
+    const netSalary = grossSalary + totalAdvances;
 
-    return { roundedHours, grossSalary, totalAdvances, netSalary };
+    return { roundedHours, grossSalary, totalAdvances, netSalary, lastPaymentDate };
   };
 
   const handleAddAdvance = async (e: React.FormEvent) => {
@@ -125,39 +137,52 @@ export default function SalarySystem() {
   };
 
   const handlePaySalary = async (employee: Employee) => {
-    const { netSalary } = calculateSalary(employee);
-    if (netSalary <= 0) {
-      setNotification({ type: 'error', message: 'Net salary must be greater than 0' });
-      return;
-    }
+    const { grossSalary } = calculateSalary(employee);
+    setSalaryInput(grossSalary.toString());
     setConfirmPay(employee);
   };
 
   const processSalaryPayment = async () => {
     if (!confirmPay) return;
     const employee = confirmPay;
-    const { netSalary } = calculateSalary(employee);
+    const { totalAdvances } = calculateSalary(employee);
+    const salaryAmount = parseFloat(salaryInput) || 0;
+    const finalSalary = salaryAmount + totalAdvances;
     
     setIsLoading(true);
     setNotification(null);
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      // Add to Expenses
-      const { error } = await supabase.from('expenses').insert([{
-        title: `Salary: ${employee.username} (${formatDate(dateFilter.startDate)} - ${formatDate(dateFilter.endDate)})`,
-        amount: netSalary,
+      // 1. Record Salary Payment
+      const { error: salError } = await supabase.from('salary_payments').insert([{
+        employee_id: employee.id,
+        salary_amount: salaryAmount,
+        total_advance: totalAdvances,
+        final_salary: finalSalary,
         date: today
       }]);
 
-      if (error) throw error;
+      if (salError) throw salError;
 
-      setNotification({ type: 'success', message: `Salary payment of ${formatCurrency(netSalary)} recorded for ${employee.username}` });
+      // 2. Add to Expenses
+      const { error: expError } = await supabase.from('expenses').insert([{
+        title: `Salary: ${employee.username}`,
+        amount: finalSalary,
+        date: today
+      }]);
+
+      if (expError) throw expError;
+
+      setNotification({ type: 'success', message: `Salary payment of ${formatCurrency(finalSalary)} recorded for ${employee.username}` });
       setConfirmPay(null);
       await fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error paying salary:', error);
-      setNotification({ type: 'error', message: 'Error recording salary payment.' });
+      setNotification({ 
+        type: 'error', 
+        message: `Error recording salary payment: ${error.message || 'Unknown error'}` 
+      });
     } finally {
       setIsLoading(false);
     }
@@ -174,7 +199,7 @@ export default function SalarySystem() {
     const doc = new jsPDF();
     doc.text('Salary Report', 105, 20, { align: 'center' });
     doc.setFontSize(10);
-    doc.text(`Period: ${formatDate(dateFilter.startDate)} to ${formatDate(dateFilter.endDate)}`, 20, 30);
+    doc.text(`Generated on: ${formatDate(new Date().toISOString())}`, 20, 30);
 
     const tableData = employees.map(emp => {
       const { roundedHours, grossSalary, totalAdvances, netSalary } = calculateSalary(emp);
@@ -183,7 +208,7 @@ export default function SalarySystem() {
 
     autoTable(doc, {
       startY: 35,
-      head: [['Employee', 'Hours', 'Gross', 'Advances', 'Net Salary']],
+      head: [['Employee', 'Hours', 'Salary Amount', 'Total Advance', 'Final Payout']],
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [79, 70, 229] }
@@ -218,12 +243,21 @@ export default function SalarySystem() {
               placeholder="Search employees..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
+              className="block w-full pl-10 pr-10 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
             />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
-            <input type="date" value={dateFilter.startDate} onChange={(e) => setDateFilter({ ...dateFilter, startDate: e.target.value })} className="px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none" />
-            <input type="date" value={dateFilter.endDate} onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value })} className="px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none" />
+            <button onClick={() => setIsHistoryModalOpen(true)} className="bg-white text-gray-600 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 flex items-center gap-2">
+              <History size={18} /> History
+            </button>
           </div>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
@@ -242,27 +276,31 @@ export default function SalarySystem() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Hours (Rounded)</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Gross Salary</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Advances</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Net Salary</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Payment</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Hours (Current Cycle)</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Salary Amount</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Advance</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Final Payout</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-gray-400" /></td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-gray-400" /></td></tr>
               ) : filteredEmployees.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-500">No employees found</td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">No employees found</td></tr>
               ) : (
                 filteredEmployees.map((emp) => {
-                  const { roundedHours, grossSalary, totalAdvances, netSalary } = calculateSalary(emp);
+                  const { roundedHours, grossSalary, totalAdvances, netSalary, lastPaymentDate } = calculateSalary(emp);
                   return (
                     <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-gray-900">{emp.username}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {lastPaymentDate.getTime() === 0 ? 'No previous payment' : formatDate(lastPaymentDate.toISOString())}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{roundedHours} hrs</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{formatCurrency(grossSalary)}</td>
-                      <td className="px-6 py-4 text-sm text-red-600">-{formatCurrency(totalAdvances)}</td>
+                      <td className="px-6 py-4 text-sm text-blue-600">+{formatCurrency(totalAdvances)}</td>
                       <td className="px-6 py-4 text-sm font-bold text-gray-900">{formatCurrency(netSalary)}</td>
                       <td className="px-6 py-4 text-right">
                         <button
@@ -322,30 +360,111 @@ export default function SalarySystem() {
 
       {confirmPay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden p-8 text-center space-y-6">
-            <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
-              <Banknote size={40} />
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900">Pay Salary: {confirmPay.username}</h3>
+              <button onClick={() => setConfirmPay(null)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-bold text-gray-900">Confirm Payment</h3>
-              <p className="text-gray-500">
-                Are you sure you want to pay <span className="font-bold text-gray-900">{formatCurrency(calculateSalary(confirmPay).netSalary)}</span> to <span className="font-bold text-gray-900">{confirmPay.username}</span>?
-              </p>
+            <div className="p-6 space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Salary Amount (₹)</label>
+                  <input 
+                    type="number" 
+                    value={salaryInput} 
+                    onChange={(e) => setSalaryInput(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                  />
+                </div>
+                <div className="flex justify-between items-center p-3 bg-blue-50 rounded-xl">
+                  <span className="text-sm text-blue-700 font-medium">Total Advance</span>
+                  <span className="text-lg font-bold text-blue-700">+{formatCurrency(calculateSalary(confirmPay).totalAdvances)}</span>
+                </div>
+                <div className="flex justify-between items-center p-4 bg-gray-900 rounded-xl text-white">
+                  <span className="font-medium">Final Payout</span>
+                  <span className="text-2xl font-bold">{formatCurrency((parseFloat(salaryInput) || 0) + calculateSalary(confirmPay).totalAdvances)}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setConfirmPay(null)}
+                  className="flex-1 py-3 rounded-xl font-semibold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={processSalaryPayment}
+                  disabled={isLoading}
+                  className="flex-[2] py-3 rounded-xl font-semibold text-white bg-primary hover:bg-primary-hover transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                >
+                  {isLoading ? 'Processing...' : 'Confirm & Pay'}
+                </button>
+              </div>
             </div>
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={() => setConfirmPay(null)}
-                className="flex-1 py-3 rounded-xl font-semibold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={processSalaryPayment}
-                disabled={isLoading}
-                className="flex-[2] py-3 rounded-xl font-semibold text-white bg-primary hover:bg-primary-hover transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
-              >
-                {isLoading ? 'Processing...' : 'Confirm & Pay'}
-              </button>
+          </div>
+        </div>
+      )}
+
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900">Salary Payment History</h3>
+              <div className="flex items-center gap-4">
+                <div className="relative w-64">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                    <Search size={16} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Filter by employee..."
+                    value={historySearchTerm}
+                    onChange={(e) => setHistorySearchTerm(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
+                  />
+                </div>
+                <button onClick={() => setIsHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Employee</th>
+                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Salary</th>
+                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Advance</th>
+                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Final Paid</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {salaryPayments.filter(p => {
+                    const emp = employees.find(e => e.id === p.employee_id);
+                    return emp?.username.toLowerCase().includes(historySearchTerm.toLowerCase());
+                  }).length === 0 ? (
+                    <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">No payment history found</td></tr>
+                  ) : (
+                    salaryPayments
+                      .filter(p => {
+                        const emp = employees.find(e => e.id === p.employee_id);
+                        return emp?.username.toLowerCase().includes(historySearchTerm.toLowerCase());
+                      })
+                      .map((p) => {
+                        const emp = employees.find(e => e.id === p.employee_id);
+                        return (
+                          <tr key={p.id}>
+                            <td className="px-6 py-4 text-sm text-gray-600">{formatDate(p.date)}</td>
+                            <td className="px-6 py-4 text-sm font-medium text-gray-900">{emp?.username || 'Unknown'}</td>
+                            <td className="px-6 py-4 text-sm text-gray-600">{formatCurrency(p.salary_amount)}</td>
+                            <td className="px-6 py-4 text-sm text-blue-600">+{formatCurrency(p.total_advance)}</td>
+                            <td className="px-6 py-4 text-sm font-bold text-gray-900">{formatCurrency(p.final_salary)}</td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

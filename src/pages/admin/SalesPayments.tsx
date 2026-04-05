@@ -9,7 +9,11 @@ export default function SalesPayments() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedParty, setSelectedParty] = useState<any>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [paymentData, setPaymentData] = useState({
     amount_received: '',
     date: new Date().toISOString().split('T')[0]
@@ -58,6 +62,7 @@ export default function SalesPayments() {
   };
 
   const handleOpenReceiveModal = (party: any) => {
+    setErrorMsg(null);
     setSelectedParty(party);
     setPaymentData({
       amount_received: '',
@@ -66,26 +71,83 @@ export default function SalesPayments() {
     setIsModalOpen(true);
   };
 
+  const handleOpenHistoryModal = async (party: any) => {
+    setSelectedParty(party);
+    setIsHistoryModalOpen(true);
+    setIsHistoryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('sales_payments')
+        .select('*')
+        .eq('party_id', party.id)
+        .order('date', { ascending: false });
+      
+      if (error) throw error;
+      setPaymentHistory(data || []);
+    } catch (error) {
+      console.error('Error fetching payment history:', error);
+      alert('Error fetching payment history');
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedParty || !paymentData.amount_received) return;
+    setErrorMsg(null);
+    console.log('handleSubmitPayment called', { selectedParty, paymentData });
+    
+    const amount = parseFloat(paymentData.amount_received);
+    if (!selectedParty || isNaN(amount) || amount <= 0) {
+      setErrorMsg('Please enter a valid amount greater than 0');
+      return;
+    }
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('sales_payments').insert([{
-        party_id: selectedParty.id,
-        amount_received: parseFloat(paymentData.amount_received),
-        date: paymentData.date
-      }]);
+      console.log('Checking Supabase client...');
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized');
+      }
 
-      if (error) throw error;
+      console.log('Testing Supabase connection...');
+      const { error: testError } = await supabase.from('sales_payments').select('id').limit(1);
+      if (testError) {
+        console.error('Supabase connection test failed:', testError);
+        // If the table doesn't exist, this will fail.
+        throw new Error('Database connection failed or table missing: ' + testError.message);
+      }
+      console.log('Connection test passed');
 
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database request timed out after 10 seconds')), 10000)
+      );
+
+      console.log('Recording payment...');
+      const { error: paymentError }: any = await Promise.race([
+        supabase.from('sales_payments').insert([{
+          party_id: selectedParty.id,
+          amount_received: amount,
+          date: paymentData.date
+        }]),
+        timeoutPromise
+      ]);
+
+      if (paymentError) {
+        console.error('Supabase payment error:', paymentError);
+        throw paymentError;
+      }
+
+      console.log('Payment recorded successfully!');
       setIsModalOpen(false);
+      alert('Payment recorded successfully!');
       fetchData();
-    } catch (error) {
-      console.error('Error saving payment:', error);
-      alert('Error saving payment.');
+    } catch (error: any) {
+      console.error('Detailed error in handleSubmitPayment:', error);
+      const msg = error.message || JSON.stringify(error);
+      setErrorMsg(msg);
     } finally {
+      console.log('handleSubmitPayment finished');
       setIsLoading(false);
     }
   };
@@ -149,13 +211,22 @@ export default function SalesPayments() {
                     <td className="px-6 py-4 text-sm font-semibold text-green-600">{formatCurrency(party.totalReceived)}</td>
                     <td className="px-6 py-4 text-sm font-bold text-red-600">{formatCurrency(party.due)}</td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleOpenReceiveModal(party)}
-                        className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2 ml-auto"
-                      >
-                        <Receipt size={16} />
-                        Receive Payment
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleOpenHistoryModal(party)}
+                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors"
+                          title="Payment History"
+                        >
+                          <History size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleOpenReceiveModal(party)}
+                          className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2"
+                        >
+                          <Receipt size={16} />
+                          Receive Payment
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -173,6 +244,11 @@ export default function SalesPayments() {
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
             <form onSubmit={handleSubmitPayment} className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-medium">
+                  {errorMsg}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Party</label>
                 <div className="px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl font-semibold text-gray-900">
@@ -218,6 +294,71 @@ export default function SalesPayments() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {isHistoryModalOpen && selectedParty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Payment History</h3>
+                <p className="text-xs text-gray-500">{selectedParty.name}</p>
+              </div>
+              <button onClick={() => setIsHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6">
+              {isHistoryLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="animate-spin text-gray-400" size={32} />
+                </div>
+              ) : paymentHistory.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  No payment history found for this party.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amount Received</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paymentHistory.map((payment) => (
+                        <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.date)}</td>
+                          <td className="px-4 py-3 text-sm font-bold text-green-600 text-right">
+                            {formatCurrency(payment.amount_received)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 font-bold">
+                      <tr>
+                        <td className="px-4 py-3 text-sm text-gray-900">Total Received</td>
+                        <td className="px-4 py-3 text-sm text-green-600 text-right">
+                          {formatCurrency(paymentHistory.reduce((sum, p) => sum + (p.amount_received || 0), 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="px-6 py-2 bg-white border border-gray-200 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

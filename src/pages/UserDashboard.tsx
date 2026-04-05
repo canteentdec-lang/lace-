@@ -34,14 +34,11 @@ export default function UserDashboard({ user }: UserDashboardProps) {
   const fetchEmployeeData = async () => {
     const { data } = await supabase
       .from('employees')
-      .select('*')
+      .select('id, username, user_id')
       .eq('user_id', user.user_id)
       .single();
     if (data) {
       setEmployeeData(data);
-      if (data.default_mts) {
-        setFormData(prev => ({ ...prev, mtr_type: data.default_mts.toString() }));
-      }
     }
   };
 
@@ -116,12 +113,13 @@ export default function UserDashboard({ user }: UserDashboardProps) {
     try {
       const now = new Date();
       const payload = {
-        user_id: user.user_id,
+        user_id: user.user_id.trim().toLowerCase(),
+        employee_id: employeeData?.id,
         date: now.toISOString().split('T')[0],
         login_time: now.toISOString(),
         shift: 'day', // Provide a default shift
         katai: 0,
-        mtr_type: employeeData?.default_mts?.toString() || '17'
+        mtr_type: '17'
       };
 
       console.log('Inserting attendance record:', payload);
@@ -185,20 +183,9 @@ export default function UserDashboard({ user }: UserDashboardProps) {
         mts: calculatedQuantity
       }]);
 
-      // 3. Update Employee Default MTS
-      if (employeeData && finalMtr) {
-        await supabase
-          .from('employees')
-          .update({ default_mts: finalMtr })
-          .eq('id', employeeData.id);
-        
-        // Refresh employee data
-        fetchEmployeeData();
-      }
-
       setActiveRecord(null);
       setShowForm(false);
-      setFormData({ shift: 'day', katai: '', mtr_type: employeeData?.default_mts?.toString() || '', custom_mtr: '' });
+      setFormData({ shift: 'day', katai: '', mtr_type: '', custom_mtr: '' });
       setCalculatedQuantity(0);
       alert('काम सफलतापूर्वक सहेजा गया!');
     } catch (error) {
@@ -303,8 +290,8 @@ export default function UserDashboard({ user }: UserDashboardProps) {
 
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">MTR प्रति कटाई (MTS)</label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {['17', '24', '36'].map(val => (
+                      <div className="grid grid-cols-5 gap-2">
+                        {['17', '24', '36', '171'].map(val => (
                           <button
                             key={val}
                             type="button"
@@ -323,6 +310,15 @@ export default function UserDashboard({ user }: UserDashboardProps) {
                         </button>
                       </div>
                     </div>
+
+                    {calculatedQuantity > 0 && (
+                      <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 text-center">
+                        <div className="text-sm text-gray-500 mb-1">कुल उत्पादन (Total Production)</div>
+                        <div className="text-2xl font-bold text-primary">
+                          {formData.katai} × {formData.mtr_type === 'custom' ? formData.custom_mtr : formData.mtr_type} = {calculatedQuantity} MTR
+                        </div>
+                      </div>
+                    )}
 
                     {formData.mtr_type === 'custom' && (
                       <motion.div

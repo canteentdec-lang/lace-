@@ -130,7 +130,7 @@ export default function DashboardOverview() {
     setIsLoading(true);
     const today = new Date().toISOString().split('T')[0];
     
-    const [emp, part, prod, attToday, sales, purchases, expenses, purchasePayments, salesPayments, allAtt, allEmps, activeAtt] = await Promise.all([
+    const [emp, part, prod, attToday, sales, purchases, expenses, purchasePayments, salesPayments, allAtt, allEmps, activeAtt, challans] = await Promise.all([
       supabase.from('employees').select('*', { count: 'exact', head: true }),
       supabase.from('parties').select('*', { count: 'exact', head: true }),
       supabase.from('products').select('*', { count: 'exact', head: true }),
@@ -142,13 +142,15 @@ export default function DashboardOverview() {
       supabase.from('sales_payments').select('amount_received'),
       supabase.from('attendance').select('*').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
       supabase.from('employees').select('id, user_id, hourly_rate'),
-      supabase.from('attendance').select('*, employee:employees(username)').is('logout_time', null)
+      supabase.from('attendance').select('*, employee:employees(username)').is('logout_time', null),
+      supabase.from('challans').select('total_profit').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate)
     ]);
 
     const todayProd = attToday.data?.reduce((sum, item) => sum + (item.katai || 0), 0) || 0;
     const totalSales = sales.data?.reduce((sum, item) => sum + (item.grand_total || 0), 0) || 0;
     const totalPurchases = purchases.data?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
     const totalExpenses = expenses.data?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0;
+    const totalChallanProfit = challans.data?.reduce((sum, item) => sum + (item.total_profit || 0), 0) || 0;
     
     // Calculate Salary
     let totalSalary = 0;
@@ -191,7 +193,7 @@ export default function DashboardOverview() {
       totalPurchases,
       totalExpenses,
       totalSalary,
-      profit: totalSales - (totalPurchases + totalExpenses + totalSalary),
+      profit: totalChallanProfit - totalExpenses,
       totalPayable: allPurchasesTotal - totalPaid,
       totalReceivable: allSalesTotal - totalReceived
     });
@@ -237,32 +239,38 @@ export default function DashboardOverview() {
   };
 
   const fetchProfitChartData = async () => {
+    const { data: challans } = await supabase.from('challans').select('date, total_profit').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     const { data: sales } = await supabase.from('bills').select('date, grand_total').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     const { data: purchases } = await supabase.from('purchases').select('date, total_amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     const { data: expenses } = await supabase.from('expenses').select('date, amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     
     const dailyData: any = {};
     
+    challans?.forEach(c => {
+      if (!dailyData[c.date]) dailyData[c.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
+      dailyData[c.date].profit += c.total_profit || 0;
+    });
+
     sales?.forEach(s => {
-      if (!dailyData[s.date]) dailyData[s.date] = { sales: 0, cost: 0 };
+      if (!dailyData[s.date]) dailyData[s.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
       dailyData[s.date].sales += s.grand_total || 0;
     });
     
     purchases?.forEach(p => {
-      if (!dailyData[p.date]) dailyData[p.date] = { sales: 0, cost: 0 };
+      if (!dailyData[p.date]) dailyData[p.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
       dailyData[p.date].cost += p.total_amount || 0;
     });
     
     expenses?.forEach(e => {
-      if (!dailyData[e.date]) dailyData[e.date] = { sales: 0, cost: 0 };
-      dailyData[e.date].cost += e.amount || 0;
+      if (!dailyData[e.date]) dailyData[e.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
+      dailyData[e.date].expenses += e.amount || 0;
     });
     
     const formatted = Object.entries(dailyData).map(([date, values]: any) => ({
       date: new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
       sales: values.sales,
-      cost: values.cost,
-      profit: values.sales - values.cost
+      cost: values.cost + values.expenses, // Total cost for the bar chart
+      profit: values.profit - values.expenses // Net profit following the user's formula
     })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     setProfitChartData(formatted);
@@ -537,48 +545,19 @@ export default function DashboardOverview() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">Patti per Katai</label>
-                      <input
-                        type="number"
-                        required
-                        value={endFormData.patti_per_katay}
-                        onChange={(e) => setEndFormData({ ...endFormData, patti_per_katay: e.target.value })}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"
-                        placeholder="0"
-                      />
+                      <label className="block text-sm font-bold text-gray-700 mb-2">MTR per Katai</label>
+                      <select
+                        value={endFormData.mtr_type}
+                        onChange={(e) => setEndFormData({ ...endFormData, mtr_type: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary outline-none bg-white"
+                      >
+                        <option value="17">17</option>
+                        <option value="24">24</option>
+                        <option value="36">36</option>
+                        <option value="171">171</option>
+                        <option value="custom">Custom</option>
+                      </select>
                     </div>
-                  </div>
-
-                  {calculatedQuantity > 0 && (
-                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-blue-700">Calculated Production</span>
-                        <span className="text-lg font-bold text-blue-900">{calculatedQuantity} MTR</span>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-blue-600 mb-1 uppercase">Manual Correction</label>
-                        <input
-                          type="number"
-                          value={manualQuantity}
-                          onChange={(e) => setManualQuantity(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none font-bold text-blue-900"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="hidden">
-                    <label className="block text-sm font-bold text-gray-700 mb-2">MTR per Katai</label>
-                    <select
-                      value={endFormData.mtr_type}
-                      onChange={(e) => setEndFormData({ ...endFormData, mtr_type: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary outline-none bg-white"
-                    >
-                      <option value="17">17</option>
-                      <option value="24">24</option>
-                      <option value="36">36</option>
-                      <option value="custom">Custom</option>
-                    </select>
                   </div>
 
                   {endFormData.mtr_type === 'custom' && (
@@ -596,6 +575,37 @@ export default function DashboardOverview() {
                         placeholder="e.g. 42"
                       />
                     </motion.div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Patti per Katai</label>
+                    <input
+                      type="number"
+                      required
+                      value={endFormData.patti_per_katay}
+                      onChange={(e) => setEndFormData({ ...endFormData, patti_per_katay: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  {calculatedQuantity > 0 && (
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3 text-center">
+                      <div className="text-sm font-medium text-blue-700">Calculated Production</div>
+                      <div className="text-2xl font-bold text-blue-900">
+                        {endFormData.katai} × {endFormData.mtr_type === 'custom' ? endFormData.custom_mtr : endFormData.mtr_type} = {calculatedQuantity} MTR
+                      </div>
+                      <div className="pt-2 border-t border-blue-100">
+                        <label className="block text-xs font-bold text-blue-600 mb-1 uppercase">Manual Correction (Optional)</label>
+                        <input
+                          type="number"
+                          value={manualQuantity}
+                          onChange={(e) => setManualQuantity(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none font-bold text-blue-900 text-center"
+                          placeholder="Override total MTR if needed"
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
 

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS employees (
   password TEXT NOT NULL,
   role TEXT DEFAULT 'employee',
   hourly_rate NUMERIC(10, 2) DEFAULT 0,
+  default_mts NUMERIC(10, 2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -112,8 +113,9 @@ CREATE TABLE IF NOT EXISTS designs (
 -- 11. Production Table
 CREATE TABLE IF NOT EXISTS production (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  attendance_id UUID REFERENCES attendance(id) ON DELETE CASCADE,
+  attendance_id UUID REFERENCES attendance(id) ON DELETE CASCADE UNIQUE,
   design_id UUID REFERENCES designs(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
   mts NUMERIC(10, 2) NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -191,7 +193,18 @@ CREATE TABLE IF NOT EXISTS sales_payments (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 18. Settings Table
+-- 18. Salary Payments Table
+CREATE TABLE IF NOT EXISTS salary_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID REFERENCES employees(id) ON DELETE CASCADE,
+  salary_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_advance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  final_salary NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 19. Settings Table
 CREATE TABLE IF NOT EXISTS settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   business_name TEXT,
@@ -221,6 +234,7 @@ ALTER TABLE challans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE challan_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE salary_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for all tables (Allow all for now as per app design)

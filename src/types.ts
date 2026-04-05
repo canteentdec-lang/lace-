@@ -6,7 +6,6 @@ export interface Employee {
   user_id: string;
   password?: string;
   hourly_rate?: number;
-  default_mts?: number;
   created_at: string;
 }
 
@@ -189,6 +188,17 @@ export interface SalesPayment {
   date: string;
   created_at: string;
   party?: Party;
+}
+
+export interface SalaryPayment {
+  id: string;
+  employee_id: string;
+  salary_amount: number;
+  total_advance: number;
+  final_salary: number;
+  date: string;
+  created_at: string;
+  employee?: Employee;
 }
 
 export interface Settings {

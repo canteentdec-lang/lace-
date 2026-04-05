@@ -9,14 +9,14 @@ export default function EmployeeManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
     username: '',
     user_id: '',
     password: '',
-    hourly_rate: '',
-    default_mts: ''
+    hourly_rate: '0'
   });
 
   useEffect(() => {
@@ -27,25 +27,25 @@ export default function EmployeeManagement() {
     setIsLoading(true);
     const { data } = await supabase
       .from('employees')
-      .select('*')
+      .select('id, username, user_id, password, hourly_rate, created_at')
       .order('created_at', { ascending: false });
     if (data) setEmployees(data);
     setIsLoading(false);
   };
 
   const handleOpenModal = (employee?: Employee) => {
+    setErrorMsg(null);
     if (employee) {
       setEditingEmployee(employee);
       setFormData({
         username: employee.username,
         user_id: employee.user_id,
         password: employee.password || '',
-        hourly_rate: employee.hourly_rate?.toString() || '',
-        default_mts: employee.default_mts?.toString() || ''
+        hourly_rate: (employee.hourly_rate || 0).toString()
       });
     } else {
       setEditingEmployee(null);
-      setFormData({ username: '', user_id: '', password: '', hourly_rate: '', default_mts: '' });
+      setFormData({ username: '', user_id: '', password: '', hourly_rate: '0' });
     }
     setIsModalOpen(true);
   };
@@ -55,26 +55,32 @@ export default function EmployeeManagement() {
     setIsLoading(true);
 
     const payload = {
-      ...formData,
-      hourly_rate: formData.hourly_rate ? parseFloat(formData.hourly_rate) : null,
-      default_mts: formData.default_mts ? parseInt(formData.default_mts) : null
+      username: formData.username,
+      user_id: formData.user_id.trim().toLowerCase(),
+      password: formData.password,
+      hourly_rate: parseFloat(formData.hourly_rate) || 0
     };
 
+    console.log('Saving employee with payload:', payload);
+    setErrorMsg(null);
     try {
       if (editingEmployee) {
-        await supabase
+        const { error } = await supabase
           .from('employees')
           .update(payload)
           .eq('id', editingEmployee.id);
+        if (error) throw error;
       } else {
-        await supabase
+        const { error } = await supabase
           .from('employees')
           .insert([payload]);
+        if (error) throw error;
       }
       setIsModalOpen(false);
       fetchEmployees();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving employee:', error);
+      setErrorMsg(error.message || 'Error saving employee');
     } finally {
       setIsLoading(false);
     }
@@ -150,7 +156,7 @@ export default function EmployeeManagement() {
                       <div className="font-medium text-gray-900">{emp.username}</div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{emp.user_id}</td>
-                    <td className="px-6 py-4 text-sm font-bold text-gray-900">₹{emp.hourly_rate || 0}</td>
+                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{emp.hourly_rate || 0}</td>
                     <td className="px-6 py-4 text-sm text-gray-400 font-mono">••••••••</td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <button 
@@ -187,6 +193,11 @@ export default function EmployeeManagement() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-medium">
+                  {errorMsg}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                 <input
@@ -210,6 +221,18 @@ export default function EmployeeManagement() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate (₹)</label>
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  value={formData.hourly_rate}
+                  onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
                 <input
                   type="text"
@@ -218,28 +241,6 @@ export default function EmployeeManagement() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                   placeholder="Enter password"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate (₹)</label>
-                <input
-                  type="number"
-                  required
-                  value={formData.hourly_rate}
-                  onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="e.g. 50"
-                  step="0.01"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Default MTS</label>
-                <input
-                  type="number"
-                  value={formData.default_mts}
-                  onChange={(e) => setFormData({ ...formData, default_mts: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="e.g. 17"
                 />
               </div>
               <div className="pt-4">
