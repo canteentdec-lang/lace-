@@ -142,7 +142,7 @@ export default function DashboardOverview() {
       supabase.from('sales_payments').select('amount_received'),
       supabase.from('attendance').select('*').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
       supabase.from('employees').select('id, user_id, hourly_rate'),
-      supabase.from('attendance').select('*, employee:employees(username)').is('logout_time', null),
+      supabase.from('attendance').select('*, employee:employees!user_id(username)').is('logout_time', null),
       supabase.from('challans').select('total_profit').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate)
     ]);
 
@@ -197,6 +197,10 @@ export default function DashboardOverview() {
       totalPayable: allPurchasesTotal - totalPaid,
       totalReceivable: allSalesTotal - totalReceived
     });
+
+    if (activeAtt.error) {
+      console.error('Error fetching active employees:', activeAtt.error);
+    }
 
     if (activeAtt.data) {
       setActiveEmployees(activeAtt.data);

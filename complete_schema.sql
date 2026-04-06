@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS attendance (
   shift TEXT CHECK (shift IN ('day', 'night')),
   katai INTEGER,
   mtr_type TEXT,
+  remarks TEXT,
   machine_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

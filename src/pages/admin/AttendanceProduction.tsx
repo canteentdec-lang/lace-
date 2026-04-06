@@ -50,7 +50,7 @@ export default function AttendanceProduction() {
       let query = supabase
         .from('attendance')
         .select(`
-          id, user_id, employee_id, date, login_time, logout_time, total_hours, shift, katai, mtr_type, remarks, created_at,
+          *,
           employee:employees!user_id(username)
         `)
         .order('date', { ascending: false });
