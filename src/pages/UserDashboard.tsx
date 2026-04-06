@@ -35,7 +35,7 @@ export default function UserDashboard({ user }: UserDashboardProps) {
     const { data } = await supabase
       .from('employees')
       .select('id, username, user_id')
-      .eq('user_id', user.user_id)
+      .eq('user_id', user.user_id.trim().toLowerCase())
       .single();
     if (data) {
       setEmployeeData(data);
@@ -65,7 +65,7 @@ export default function UserDashboard({ user }: UserDashboardProps) {
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
-        .eq('user_id', user.user_id)
+        .eq('user_id', user.user_id.trim().toLowerCase())
         .is('logout_time', null)
         .order('login_time', { ascending: false })
         .limit(1)

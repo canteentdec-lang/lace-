@@ -19,8 +19,9 @@ export default function Login({ onLogin }: LoginProps) {
     setError(null);
 
     try {
+      const normalizedUserId = userId.trim().toLowerCase();
       // Admin Login (Fixed)
-      if (userId === 'admin' && password === 'admin123') {
+      if (normalizedUserId === 'admin' && password === 'admin123') {
         onLogin({ user_id: 'admin', username: 'Administrator', role: 'admin' });
         return;
       }
@@ -29,7 +30,7 @@ export default function Login({ onLogin }: LoginProps) {
       const { data, error: fetchError } = await supabase
         .from('employees')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', normalizedUserId)
         .eq('password', password)
         .single();
 

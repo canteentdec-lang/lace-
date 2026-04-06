@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS employees (
 -- 2. Attendance Table
 CREATE TABLE IF NOT EXISTS attendance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT REFERENCES employees(user_id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES employees(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
   employee_id UUID REFERENCES employees(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   login_time TIMESTAMPTZ,
