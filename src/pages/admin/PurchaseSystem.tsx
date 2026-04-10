@@ -26,6 +26,25 @@ export default function PurchaseSystem() {
     { product_id: '', product_name: '', price: 0, quantity: 1, total: 0 }
   ]);
 
+  const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
+
+  const [newPartyData, setNewPartyData] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    gst_no: ''
+  });
+
+  const [newProductData, setNewProductData] = useState({
+    name: '',
+    base_price: 0,
+    bill_price: 0,
+    challan_price: 0,
+    gst_percent: 5
+  });
+
   useEffect(() => {
     fetchPurchases();
     fetchParties();
@@ -208,6 +227,91 @@ export default function PurchaseSystem() {
     doc.save(`Purchase_${purchase.purchase_number}.pdf`);
   };
 
+  const handleSaveParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPartyData.name) return;
+    
+    setIsLoading(true);
+    try {
+      // Check for duplicate
+      const { data: existing } = await supabase
+        .from('parties')
+        .select('id')
+        .eq('name', newPartyData.name)
+        .eq('type', 'purchase')
+        .maybeSingle();
+
+      if (existing) {
+        alert('Party with this name already exists!');
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('parties')
+        .insert([{ ...newPartyData, type: 'purchase' }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setParties(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+        setFormData(prev => ({ ...prev, party_id: data.id }));
+        setIsPartyModalOpen(false);
+        setNewPartyData({ name: '', phone: '', address: '', gst_no: '' });
+      }
+    } catch (error: any) {
+      alert('Error saving party: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductData.name) return;
+
+    setIsLoading(true);
+    try {
+      // Check for duplicate
+      const { data: existing } = await supabase
+        .from('products')
+        .select('id')
+        .eq('name', newProductData.name)
+        .eq('type', 'purchase')
+        .maybeSingle();
+
+      if (existing) {
+        alert('Product with this name already exists!');
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('products')
+        .insert([{ ...newProductData, type: 'purchase', price: newProductData.bill_price }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setProducts(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+        if (activeItemIndex !== null) {
+          updateItem(activeItemIndex, 'product_id', data.id);
+        }
+        setIsProductModalOpen(false);
+        setNewProductData({ name: '', base_price: 0, bill_price: 0, challan_price: 0, gst_percent: 5 });
+        setActiveItemIndex(null);
+      }
+    } catch (error: any) {
+      alert('Error saving product: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (view === 'create') {
     return (
       <div className="space-y-6">
@@ -230,7 +334,16 @@ export default function PurchaseSystem() {
               <input type="text" required value={formData.purchase_number} onChange={(e) => setFormData({ ...formData, purchase_number: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none" placeholder="e.g. PUR-001" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Party</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+                Party
+                <button 
+                  type="button" 
+                  onClick={() => setIsPartyModalOpen(true)}
+                  className="text-primary hover:underline text-xs flex items-center gap-1"
+                >
+                  <Plus size={14} /> Add New
+                </button>
+              </label>
               <select required value={formData.party_id} onChange={(e) => setFormData({ ...formData, party_id: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none bg-white">
                 <option value="">Select Party</option>
                 {parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -254,7 +367,19 @@ export default function PurchaseSystem() {
               {items.map((item, index) => (
                 <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                   <div className="md:col-span-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Product</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1 flex justify-between">
+                      Product
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setActiveItemIndex(index);
+                          setIsProductModalOpen(true);
+                        }}
+                        className="text-primary hover:underline text-[10px] flex items-center gap-0.5"
+                      >
+                        <Plus size={12} /> Add New
+                      </button>
+                    </label>
                     <select required value={item.product_id} onChange={(e) => updateItem(index, 'product_id', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white">
                       <option value="">Select Product</option>
                       {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -298,6 +423,135 @@ export default function PurchaseSystem() {
             </button>
           </div>
         </form>
+
+        {/* Add Party Modal */}
+        {isPartyModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 className="text-lg font-bold text-gray-900">Add New Party</h3>
+                <button onClick={() => setIsPartyModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={24} />
+                </button>
+              </div>
+              <form onSubmit={handleSaveParty} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Party Name</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={newPartyData.name} 
+                    onChange={e => setNewPartyData({...newPartyData, name: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Phone Number</label>
+                  <input 
+                    type="text" 
+                    value={newPartyData.phone} 
+                    onChange={e => setNewPartyData({...newPartyData, phone: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Address</label>
+                  <textarea 
+                    value={newPartyData.address} 
+                    onChange={e => setNewPartyData({...newPartyData, address: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary h-20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">GST Number</label>
+                  <input 
+                    type="text" 
+                    value={newPartyData.gst_no} 
+                    onChange={e => setNewPartyData({...newPartyData, gst_no: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setIsPartyModalOpen(false)} className="flex-1 py-2 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" className="flex-1 py-2 bg-primary text-white rounded-xl font-bold hover:bg-primary-hover">Save Party</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Add Product Modal */}
+        {isProductModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 className="text-lg font-bold text-gray-900">Add New Product</h3>
+                <button onClick={() => setIsProductModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={24} />
+                </button>
+              </div>
+              <form onSubmit={handleSaveProduct} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Product Name</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={newProductData.name} 
+                    onChange={e => setNewProductData({...newProductData, name: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Base Price</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      value={newProductData.base_price} 
+                      onChange={e => setNewProductData({...newProductData, base_price: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Bill Price</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      value={newProductData.bill_price} 
+                      onChange={e => setNewProductData({...newProductData, bill_price: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Challan Price</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      value={newProductData.challan_price} 
+                      onChange={e => setNewProductData({...newProductData, challan_price: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">GST %</label>
+                    <input 
+                      type="number" 
+                      value={newProductData.gst_percent} 
+                      onChange={e => setNewProductData({...newProductData, gst_percent: parseFloat(e.target.value) || 0})}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setIsProductModalOpen(false)} className="flex-1 py-2 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" className="flex-1 py-2 bg-primary text-white rounded-xl font-bold hover:bg-primary-hover">Save Product</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
