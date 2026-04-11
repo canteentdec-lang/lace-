@@ -13,6 +13,7 @@ import {
   Receipt,
   Wallet,
   Banknote,
+  Tag,
   Cpu,
   History,
   Settings as SettingsIcon
@@ -36,6 +37,7 @@ export default function Sidebar({ user, currentView, setCurrentView, isOpen, onL
     { id: 'salary', label: 'Salary & Advances', icon: Banknote },
     { id: 'parties', label: 'Parties', icon: Building2 },
     { id: 'products', label: 'Products', icon: Package },
+    { id: 'party_pricing', label: 'Party Pricing', icon: Tag },
     { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
     { id: 'purchase_payments', label: 'Purchase Payments', icon: Banknote },
     { id: 'challans', label: 'Challans', icon: FileText },

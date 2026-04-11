@@ -15,6 +15,7 @@ import BillSystem from './admin/BillSystem';
 import ExpenseManagement from './admin/ExpenseManagement';
 import SalarySystem from './admin/SalarySystem';
 import Settings from './admin/Settings';
+import PartyWisePricing from './admin/PartyWisePricing';
 
 interface AdminDashboardProps {
   currentView: string;
@@ -50,6 +51,8 @@ export default function AdminDashboard({ currentView, setCurrentView }: AdminDas
         return <ExpenseManagement />;
       case 'salary':
         return <SalarySystem />;
+      case 'party_pricing':
+        return <PartyWisePricing />;
       case 'settings':
         return <Settings />;
       case 'reports':

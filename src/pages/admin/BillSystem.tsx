@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Bill, Party, Product, BillItem, Settings } from '../../types';
+import { Bill, Party, Product, BillItem, Settings, PartyProductPrice } from '../../types';
 import { Plus, Search, Download, Trash2, X, Loader2, ArrowLeft, PlusCircle, MinusCircle, Receipt, Share2, CheckCircle2 } from 'lucide-react';
 import { formatCurrency, formatDate, formatAmount, loadImage } from '../../lib/utils';
 import { jsPDF } from 'jspdf';
@@ -11,6 +11,7 @@ export default function BillSystem() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [partyPrices, setPartyPrices] = useState<PartyProductPrice[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -38,7 +39,13 @@ export default function BillSystem() {
     fetchParties();
     fetchProducts();
     fetchSettings();
+    fetchPartyPrices();
   }, []);
+
+  const fetchPartyPrices = async () => {
+    const { data } = await supabase.from('party_product_prices').select('*');
+    if (data) setPartyPrices(data);
+  };
 
   const fetchSettings = async () => {
     try {
@@ -121,7 +128,16 @@ export default function BillSystem() {
       if (product) {
         item.product_id = product.id;
         item.product_name = product.name;
-        item.price = product.bill_price || product.price || 0;
+        
+        // Check for custom party price
+        const customPrice = partyPrices.find(pp => pp.party_id === formData.party_id && pp.product_id === product.id);
+        
+        if (customPrice && customPrice.bill_price > 0) {
+          item.price = customPrice.bill_price;
+        } else {
+          item.price = product.bill_price || product.price || 0;
+        }
+        
         item.base_price = product.base_price || product.price || 0;
         item.gst_percentage = product.gst_applicable ? product.gst_percent : 0;
       }
@@ -628,6 +644,13 @@ export default function BillSystem() {
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Price</label>
                     <input type="number" step="0.01" value={item.price || ''} onChange={(e) => updateItem(index, 'price', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
+                    {item.product_id && (
+                      <p className="text-[10px] mt-1 text-gray-400">
+                        {partyPrices.some(pp => pp.party_id === formData.party_id && pp.product_id === item.product_id && pp.bill_price > 0) 
+                          ? 'Using custom party price' 
+                          : 'Using default product price'}
+                      </p>
+                    )}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Quantity</label>

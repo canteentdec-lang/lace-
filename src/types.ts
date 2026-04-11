@@ -211,3 +211,14 @@ export interface Settings {
   logo_url: string;
   created_at: string;
 }
+
+export interface PartyProductPrice {
+  id: string;
+  party_id: string;
+  product_id: string;
+  bill_price: number;
+  challan_price: number;
+  created_at: string;
+  party?: Party;
+  product?: Product;
+}

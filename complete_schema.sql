@@ -217,6 +217,17 @@ CREATE TABLE IF NOT EXISTS settings (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 20. Party Product Prices Table
+CREATE TABLE IF NOT EXISTS party_product_prices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  party_id UUID REFERENCES parties(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  bill_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  challan_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(party_id, product_id)
+);
+
 -- Enable RLS on all tables
 ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
@@ -237,6 +248,7 @@ ALTER TABLE purchase_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE salary_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE party_product_prices ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for all tables (Allow all for now as per app design)
 DO $$
