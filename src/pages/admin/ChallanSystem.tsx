@@ -29,6 +29,8 @@ export default function ChallanSystem() {
     { product_id: '', product_name: '', price: 0, quantity: 1, total: 0 }
   ]);
   const [editingChallanId, setEditingChallanId] = useState<string | null>(null);
+  const [suggestedChallanNo, setSuggestedChallanNo] = useState<string | null>(null);
+  const [isFetchingSuggestion, setIsFetchingSuggestion] = useState(false);
 
   useEffect(() => {
     fetchChallans();
@@ -69,6 +71,64 @@ export default function ChallanSystem() {
       .order('name', { ascending: true });
     if (data) setProducts(data);
   };
+
+  const getNextChallanSuggestion = async (input: string) => {
+    if (editingChallanId) return; // Don't suggest when editing existing
+    
+    setIsFetchingSuggestion(true);
+    try {
+      // Extract prefix and current number if any
+      // Regex to split alpha prefix and numeric suffix
+      const match = input.match(/^([a-zA-Z-]*?)(\d*)$/);
+      const prefix = match ? match[1] : '';
+      
+      let query = supabase
+        .from('challans')
+        .select('challan_no')
+        .order('created_at', { ascending: false })
+        .limit(50); // Get recent ones to find the max in this series
+
+      if (prefix) {
+        query = query.ilike('challan_no', `${prefix}%`);
+      } else {
+        // If no prefix, look for purely numeric ones
+        query = query.not('challan_no', 'ilike', '%[^0-9]%');
+      }
+
+      const { data, error } = await query;
+      
+      if (error) throw error;
+
+      let nextNum = 1;
+      if (data && data.length > 0) {
+        const numbers = data
+          .map(c => {
+            const m = c.challan_no.match(new RegExp(`^${prefix}(\\d+)$`));
+            return m ? parseInt(m[1], 10) : (prefix === '' && /^\d+$/.test(c.challan_no) ? parseInt(c.challan_no, 10) : 0);
+          })
+          .filter(n => !isNaN(n));
+        
+        if (numbers.length > 0) {
+          nextNum = Math.max(...numbers) + 1;
+        }
+      }
+
+      setSuggestedChallanNo(`${prefix}${nextNum}`);
+    } catch (error) {
+      console.error('Error fetching suggestion:', error);
+    } finally {
+      setIsFetchingSuggestion(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (view === 'create') {
+        getNextChallanSuggestion(newChallan.challan_no);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [newChallan.challan_no, view]);
 
   const addItem = () => {
     setItems([...items, { product_id: '', product_name: '', price: 0, quantity: 1, total: 0 }]);
@@ -326,7 +386,30 @@ export default function ChallanSystem() {
           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Challan No</label>
-              <input type="text" required value={newChallan.challan_no} onChange={(e) => setNewChallan({ ...newChallan, challan_no: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none" placeholder="e.g. CH-001" />
+              <div className="relative">
+                <input 
+                  type="text" 
+                  required 
+                  value={newChallan.challan_no} 
+                  onChange={(e) => setNewChallan({ ...newChallan, challan_no: e.target.value })} 
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:border-transparent outline-none" 
+                  placeholder="e.g. CH-001" 
+                />
+                {suggestedChallanNo && suggestedChallanNo !== newChallan.challan_no && (
+                  <button
+                    type="button"
+                    onClick={() => setNewChallan({ ...newChallan, challan_no: suggestedChallanNo })}
+                    className="absolute left-0 -bottom-6 text-[10px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                  >
+                    <Plus size={10} /> Suggestion: {suggestedChallanNo} (Click to apply)
+                  </button>
+                )}
+                {isFetchingSuggestion && (
+                  <div className="absolute right-3 top-2.5">
+                    <Loader2 size={14} className="animate-spin text-gray-400" />
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Party</label>
