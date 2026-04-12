@@ -259,14 +259,14 @@ export default function RawMaterialRequest() {
                   className="w-full bg-[#25D366] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-lg shadow-green-500/20"
                 >
                   <MessageSquare size={20} />
-                  Send to Admin 1 (6355422735)
+                  Krish (6355422735)
                 </button>
                 <button
                   onClick={() => openWhatsApp('9825033599')}
                   className="w-full bg-[#25D366] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-lg shadow-green-500/20"
                 >
                   <MessageSquare size={20} />
-                  Send to Admin 2 (9825033599)
+                  Vickybhai (9825033599)
                 </button>
                 <button
                   onClick={copyToClipboard}
