@@ -9,6 +9,7 @@ export default function Settings() {
     address: '',
     gst_no: '',
     phone: '',
+    phone2: '',
     email: '',
     logo_url: ''
   });
@@ -242,7 +243,7 @@ export default function Settings() {
             <div className="space-y-2">
               <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <Phone size={16} className="text-gray-400" />
-                Phone Number
+                Phone Number 1
               </label>
               <input
                 type="text"
@@ -251,6 +252,20 @@ export default function Settings() {
                 onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
                 placeholder="e.g. 9825033599"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Phone size={16} className="text-gray-400" />
+                Phone Number 2
+              </label>
+              <input
+                type="text"
+                value={settings.phone2 || ''}
+                onChange={(e) => setSettings({ ...settings, phone2: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                placeholder="e.g. 6355422735"
               />
             </div>
 

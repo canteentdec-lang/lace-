@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'employee';
+export type Role = 'admin' | 'employee' | 'manager';
 
 export interface Employee {
   id: string;
@@ -6,6 +6,7 @@ export interface Employee {
   user_id: string;
   password?: string;
   hourly_rate?: number;
+  role: Role;
   created_at: string;
 }
 
@@ -207,6 +208,7 @@ export interface Settings {
   address: string;
   gst_no: string;
   phone: string;
+  phone2?: string;
   email: string;
   logo_url: string;
   created_at: string;
@@ -221,4 +223,20 @@ export interface PartyProductPrice {
   created_at: string;
   party?: Party;
   product?: Product;
+}
+
+export interface RawMaterialCategory {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface RawMaterialSubcategory {
+  id: string;
+  category_id: string;
+  name: string;
+  color_name: string;
+  color_code: string;
+  created_at: string;
+  category?: RawMaterialCategory;
 }

@@ -16,7 +16,8 @@ export default function EmployeeManagement() {
     username: '',
     user_id: '',
     password: '',
-    hourly_rate: '0'
+    hourly_rate: '0',
+    role: 'employee' as const
   });
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function EmployeeManagement() {
     setIsLoading(true);
     const { data } = await supabase
       .from('employees')
-      .select('id, username, user_id, password, hourly_rate, created_at')
+      .select('id, username, user_id, password, hourly_rate, role, created_at')
       .order('created_at', { ascending: false });
     if (data) setEmployees(data);
     setIsLoading(false);
@@ -41,11 +42,12 @@ export default function EmployeeManagement() {
         username: employee.username,
         user_id: employee.user_id,
         password: employee.password || '',
-        hourly_rate: (employee.hourly_rate || 0).toString()
+        hourly_rate: (employee.hourly_rate || 0).toString(),
+        role: employee.role || 'employee'
       });
     } else {
       setEditingEmployee(null);
-      setFormData({ username: '', user_id: '', password: '', hourly_rate: '0' });
+      setFormData({ username: '', user_id: '', password: '', hourly_rate: '0', role: 'employee' });
     }
     setIsModalOpen(true);
   };
@@ -58,7 +60,8 @@ export default function EmployeeManagement() {
       username: formData.username,
       user_id: formData.user_id.trim().toLowerCase(),
       password: formData.password,
-      hourly_rate: parseFloat(formData.hourly_rate) || 0
+      hourly_rate: parseFloat(formData.hourly_rate) || 0,
+      role: formData.role
     };
 
     console.log('Saving employee with payload:', payload);
@@ -130,6 +133,7 @@ export default function EmployeeManagement() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">User ID</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Hourly Rate</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Password</th>
@@ -154,6 +158,15 @@ export default function EmployeeManagement() {
                   <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">{emp.username}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        emp.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                        emp.role === 'manager' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {emp.role}
+                      </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{emp.user_id}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{emp.hourly_rate || 0}</td>
@@ -208,6 +221,19 @@ export default function EmployeeManagement() {
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
                   placeholder="e.g. Rahul Sharma"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  required
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none bg-white"
+                >
+                  <option value="employee">Employee</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">User ID (Login ID)</label>

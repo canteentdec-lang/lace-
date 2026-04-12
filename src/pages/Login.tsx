@@ -37,7 +37,7 @@ export default function Login({ onLogin }: LoginProps) {
       if (fetchError || !data) {
         setError('Invalid User ID or Password');
       } else {
-        onLogin({ user_id: data.user_id, username: data.username, role: 'employee' });
+        onLogin({ user_id: data.user_id, username: data.username, role: data.role || 'employee' });
       }
     } catch (err) {
       setError('Something went wrong. Please try again.');

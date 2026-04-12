@@ -38,6 +38,9 @@ export default function App() {
     setCurrentView('dashboard');
   };
 
+  // Redirect manager to raw material request by default if needed, 
+  // but UserDashboard handles its own tabs now.
+
   if (configError) {
     return (
       <div className="min-h-screen bg-bg-soft flex items-center justify-center p-4">

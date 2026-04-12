@@ -38,6 +38,7 @@ export default function Sidebar({ user, currentView, setCurrentView, isOpen, onL
     { id: 'parties', label: 'Parties', icon: Building2 },
     { id: 'products', label: 'Products', icon: Package },
     { id: 'party_pricing', label: 'Party Pricing', icon: Tag },
+    { id: 'raw_materials', label: 'Raw Materials', icon: Package },
     { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
     { id: 'purchase_payments', label: 'Purchase Payments', icon: Banknote },
     { id: 'challans', label: 'Challans', icon: FileText },

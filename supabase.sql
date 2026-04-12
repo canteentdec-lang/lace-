@@ -196,6 +196,7 @@ CREATE TABLE IF NOT EXISTS settings (
   address TEXT,
   gst_no TEXT,
   phone TEXT,
+  phone2 TEXT,
   email TEXT,
   logo_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -210,6 +211,23 @@ CREATE TABLE IF NOT EXISTS party_product_prices (
   challan_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(party_id, product_id)
+);
+
+-- 21. Raw Material Categories Table
+CREATE TABLE IF NOT EXISTS raw_material_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 22. Raw Material Sub-categories Table
+CREATE TABLE IF NOT EXISTS raw_material_subcategories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id UUID REFERENCES raw_material_categories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  color_name TEXT,
+  color_code TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Enable RLS on all tables
@@ -232,6 +250,8 @@ ALTER TABLE purchase_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE party_product_prices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raw_material_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raw_material_subcategories ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for all tables (Allow all for now as per app design)
 DO $$
