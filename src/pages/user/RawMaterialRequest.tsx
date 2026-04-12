@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { RawMaterialCategory, RawMaterialSubcategory, Settings } from '../../types';
-import { Loader2, Package, Tag, Send, CheckCircle2, ArrowLeft, MessageSquare, Plus, Minus } from 'lucide-react';
+import { Loader2, Package, Tag, Send, CheckCircle2, ArrowLeft, MessageSquare, Plus, Minus, Copy, ExternalLink, X } from 'lucide-react';
 
 export default function RawMaterialRequest() {
   const [categories, setCategories] = useState<RawMaterialCategory[]>([]);
@@ -9,6 +9,8 @@ export default function RawMaterialRequest() {
   const [selectedCategory, setSelectedCategory] = useState<RawMaterialCategory | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [showSendOptions, setShowSendOptions] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const [selectedItems, setSelectedItems] = useState<{
     subcategory: RawMaterialSubcategory;
@@ -73,34 +75,33 @@ export default function RawMaterialRequest() {
 
   const handleSendRequest = () => {
     if (selectedItems.length === 0) return alert('Please select at least one item');
-    if (!settings?.phone) return alert('Admin phone number not set in settings');
+    setShowSendOptions(true);
+  };
 
-    let message = `*Raw Material Request*\n\n`;
-    selectedItems.forEach((item, index) => {
-      message += `${index + 1}. *${item.subcategory.category?.name} - ${item.subcategory.name}*\n`;
-      message += `   Color: ${item.subcategory.color_name}\n`;
-      if (item.quantity) message += `   Quantity: ${item.quantity}\n`;
-      if (item.notes) message += `   Notes: ${item.notes}\n`;
+  const generateMessage = () => {
+    let message = `*Raw Material Request:*\n`;
+    selectedItems.forEach((item) => {
+      message += `- ${item.subcategory.name} (${item.subcategory.color_name})`;
+      if (item.quantity) message += ` | Qty: ${item.quantity}`;
+      if (item.notes) message += ` | Note: ${item.notes}`;
       message += `\n`;
     });
+    return message;
+  };
 
+  const openWhatsApp = (number: string) => {
+    const message = generateMessage();
     const encodedMessage = encodeURIComponent(message);
-    
-    // Send to first number
-    const whatsappUrl1 = `https://wa.me/${settings.phone}?text=${encodedMessage}`;
-    window.open(whatsappUrl1, '_blank');
+    const whatsappUrl = `https://wa.me/${number}?text=${encodedMessage}`;
+    window.open(whatsappUrl, '_blank');
+  };
 
-    // Send to second number if exists
-    if (settings.phone2) {
-      setTimeout(() => {
-        const whatsappUrl2 = `https://wa.me/${settings.phone2}?text=${encodedMessage}`;
-        window.open(whatsappUrl2, '_blank');
-      }, 500); // Small delay to help avoid popup blockers
-    }
-    
-    // Clear selection after sending
-    setSelectedItems([]);
-    setSelectedCategory(null);
+  const copyToClipboard = () => {
+    const message = generateMessage();
+    navigator.clipboard.writeText(message).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
   };
 
   if (isLoading) {
@@ -217,16 +218,74 @@ export default function RawMaterialRequest() {
       )}
 
       {/* Floating Send Button */}
-      {selectedItems.length > 0 && (
+      {selectedItems.length > 0 && !showSendOptions && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50">
           <button
             onClick={handleSendRequest}
             className="w-full bg-primary text-white py-4 rounded-2xl font-bold shadow-xl shadow-primary/20 hover:bg-primary-hover transition-all flex items-center justify-center gap-3"
           >
             <MessageSquare size={20} />
-            Send Request via WhatsApp
+            Send Request
             <span className="bg-white/20 px-2 py-0.5 rounded-lg text-xs">{selectedItems.length}</span>
           </button>
+        </div>
+      )}
+
+      {/* Send Options Modal */}
+      {showSendOptions && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-t-[32px] sm:rounded-[32px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
+            <div className="p-6 space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold text-gray-900">Send Request</h3>
+                <button 
+                  onClick={() => setShowSendOptions(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X size={24} className="text-gray-400" />
+                </button>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Message Preview</p>
+                <pre className="text-xs text-gray-700 font-sans whitespace-pre-wrap leading-relaxed">
+                  {generateMessage()}
+                </pre>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <button
+                  onClick={() => openWhatsApp('635542735')}
+                  className="w-full bg-[#25D366] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-lg shadow-green-500/20"
+                >
+                  <MessageSquare size={20} />
+                  Send to Admin 1 (635542735)
+                </button>
+                <button
+                  onClick={() => openWhatsApp('9825033599')}
+                  className="w-full bg-[#25D366] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-lg shadow-green-500/20"
+                >
+                  <MessageSquare size={20} />
+                  Send to Admin 2 (9825033599)
+                </button>
+                <button
+                  onClick={copyToClipboard}
+                  className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all border-2 ${
+                    copySuccess 
+                      ? 'bg-green-50 border-green-200 text-green-600' 
+                      : 'bg-white border-gray-100 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {copySuccess ? <CheckCircle2 size={20} /> : <Copy size={20} />}
+                  {copySuccess ? 'Copied to Clipboard!' : 'Copy Message'}
+                </button>
+              </div>
+
+              <p className="text-center text-[10px] text-gray-400 font-medium">
+                Clicking a button will open WhatsApp with the message pre-filled.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>
