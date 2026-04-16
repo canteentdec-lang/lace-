@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export default function Reports() {
-  const [activeTab, setActiveTab] = useState<'katai' | 'challan' | 'purchase' | 'bill' | 'purchase_due' | 'sales_due'>('katai');
+  const [activeTab, setActiveTab] = useState<'katai' | 'challan' | 'purchase' | 'bill' | 'purchase_due' | 'sales_due' | 'attendance'>('katai');
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -16,6 +16,11 @@ export default function Reports() {
   const [kataiRecords, setKataiRecords] = useState<Attendance[]>([]);
   const [kataiFilters, setKataiFilters] = useState({ startDate: '', endDate: '', employee: '', searchTerm: '' });
   const [employees, setEmployees] = useState<Employee[]>([]);
+
+  // Attendance Report State
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [attendanceFilters, setAttendanceFilters] = useState({ startDate: '', endDate: '', employee: '', quickFilter: '' });
+  const [attendanceStats, setAttendanceStats] = useState({ totalKatai: 0, totalHours: 0, totalMts: 0, presentDays: 0, totalDaysInRange: 0 });
 
   // Challan Report State
   const [challanRecords, setChallanRecords] = useState<Challan[]>([]);
@@ -56,7 +61,8 @@ export default function Reports() {
     else if (activeTab === 'bill') fetchBillReport();
     else if (activeTab === 'purchase_due') fetchPurchaseDueReport();
     else if (activeTab === 'sales_due') fetchSalesDueReport();
-  }, [activeTab, kataiFilters, challanFilters, purchaseFilters, billFilters, purchaseDueFilters, salesDueFilters]);
+    else if (activeTab === 'attendance') fetchAttendanceReport();
+  }, [activeTab, kataiFilters, challanFilters, purchaseFilters, billFilters, purchaseDueFilters, salesDueFilters, attendanceFilters]);
 
   const fetchEmployees = async () => {
     const { data } = await supabase.from('employees').select('*');
@@ -179,6 +185,77 @@ export default function Reports() {
       setSalesDueRecords(records);
     }
     setIsLoading(false);
+  };
+
+  const fetchAttendanceReport = async () => {
+    setIsLoading(true);
+    try {
+      let query = supabase
+        .from('attendance')
+        .select(`
+          *,
+          employee:employees!user_id(username),
+          production:production(mts)
+        `)
+        .order('date', { ascending: false });
+
+      if (attendanceFilters.startDate) query = query.gte('date', attendanceFilters.startDate);
+      if (attendanceFilters.endDate) query = query.lte('date', attendanceFilters.endDate);
+      if (attendanceFilters.employee) query = query.eq('user_id', attendanceFilters.employee);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      if (data) {
+        const processed = data.map((r: any) => ({
+          ...r,
+          mts: r.production?.[0]?.mts || 0
+        }));
+        setAttendanceRecords(processed);
+
+        // Calculate Stats
+        const totalKatai = processed.reduce((sum, r) => sum + (r.katai || 0), 0);
+        const totalHours = processed.reduce((sum, r) => sum + (r.total_hours || 0), 0);
+        const totalMts = processed.reduce((sum, r) => sum + (r.mts || 0), 0);
+        const uniqueDates = new Set(processed.map(r => r.date));
+        const presentDays = uniqueDates.size;
+
+        let totalDaysInRange = 0;
+        if (attendanceFilters.startDate && attendanceFilters.endDate) {
+          const start = new Date(attendanceFilters.startDate);
+          const end = new Date(attendanceFilters.endDate);
+          totalDaysInRange = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        setAttendanceStats({ totalKatai, totalHours, totalMts, presentDays, totalDaysInRange });
+      }
+    } catch (error) {
+      console.error('Error fetching attendance report:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickFilter = (type: 'last_week' | 'last_month' | 'this_month') => {
+    const now = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    if (type === 'last_week') {
+      start.setDate(now.getDate() - 7);
+    } else if (type === 'last_month') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (type === 'this_month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    setAttendanceFilters({
+      ...attendanceFilters,
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      quickFilter: type
+    });
   };
 
   const exportKataiPDF = async () => {
@@ -459,6 +536,78 @@ export default function Reports() {
     }
   };
 
+  const exportAttendancePDF = async () => {
+    try {
+      setIsExporting(true);
+      if (attendanceRecords.length === 0) {
+        alert('No records to export');
+        setIsExporting(false);
+        return;
+      }
+      const doc = new jsPDF();
+
+      // Header with logo
+      if (settings?.logo_url && (settings.logo_url.startsWith('http') || settings.logo_url.startsWith('data:'))) {
+        try {
+          const logoBase64 = await loadImage(settings.logo_url);
+          doc.addImage(logoBase64, 'PNG', 15, 10, 20, 20);
+        } catch (e) {
+          console.error('Error adding logo to PDF:', e);
+        }
+      }
+
+      doc.setFontSize(18);
+      doc.text('Attendance & Work Report', 105, 20, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 30);
+      
+      if (attendanceFilters.startDate || attendanceFilters.endDate) {
+        const start = attendanceFilters.startDate ? formatDate(attendanceFilters.startDate) : 'Start';
+        const end = attendanceFilters.endDate ? formatDate(attendanceFilters.endDate) : 'End';
+        doc.text(`Period: ${start} to ${end}`, 20, 35);
+      }
+
+      const tableData = attendanceRecords.map(r => [
+        r.employee?.username || r.user_id,
+        formatDate(r.date),
+        r.shift || '-',
+        r.katai || 0,
+        r.mts || 0,
+        r.total_hours ? `${r.total_hours} hrs` : '-'
+      ]);
+
+      autoTable(doc, {
+        startY: 40,
+        head: [['Employee', 'Date', 'Shift', 'Katai', 'MTS', 'Hours']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [79, 70, 229] },
+        foot: [[
+          'Summary', 
+          '', 
+          '', 
+          `Total: ${attendanceStats.totalKatai}`, 
+          `Total: ${attendanceStats.totalMts}`, 
+          `Total: ${attendanceStats.totalHours.toFixed(2)} hrs`
+        ]],
+        footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
+      });
+
+      const finalY = (doc as any).lastAutoTable.finalY || 150;
+      doc.text(`Present Days: ${attendanceStats.presentDays}`, 20, finalY + 10);
+      if (attendanceStats.totalDaysInRange > 0) {
+        doc.text(`Total Days in Range: ${attendanceStats.totalDaysInRange}`, 20, finalY + 15);
+      }
+
+      doc.save('Attendance_Report.pdf');
+    } catch (error) {
+      console.error('PDF Export Error:', error);
+      alert('Error generating PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const exportSalesDuePDF = async () => {
     try {
       setIsExporting(true);
@@ -529,6 +678,12 @@ export default function Reports() {
         >
           Sales Due
         </button>
+        <button
+          onClick={() => setActiveTab('attendance')}
+          className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'attendance' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Attendance Report
+        </button>
       </div>
 
       {/* Filters & Export */}
@@ -565,6 +720,58 @@ export default function Reports() {
                   <option value="">All Employees</option>
                   {employees.map(e => <option key={e.id} value={e.user_id}>{e.username}</option>)}
                 </select>
+              </div>
+            </>
+          ) : activeTab === 'attendance' ? (
+            <>
+              <div className="lg:col-span-3 flex flex-wrap gap-2 mb-2">
+                <button 
+                  onClick={() => handleQuickFilter('last_week')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${attendanceFilters.quickFilter === 'last_week' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  Last Week
+                </button>
+                <button 
+                  onClick={() => handleQuickFilter('last_month')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${attendanceFilters.quickFilter === 'last_month' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  Last Month
+                </button>
+                <button 
+                  onClick={() => handleQuickFilter('this_month')}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${attendanceFilters.quickFilter === 'this_month' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  This Month
+                </button>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Employee</label>
+                <select 
+                  value={attendanceFilters.employee} 
+                  onChange={(e) => setAttendanceFilters({ ...attendanceFilters, employee: e.target.value, quickFilter: '' })} 
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="">All Employees</option>
+                  {employees.map(e => <option key={e.id} value={e.user_id}>{e.username}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">From Date</label>
+                <input 
+                  type="date" 
+                  value={attendanceFilters.startDate} 
+                  onChange={(e) => setAttendanceFilters({ ...attendanceFilters, startDate: e.target.value, quickFilter: '' })} 
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">To Date</label>
+                <input 
+                  type="date" 
+                  value={attendanceFilters.endDate} 
+                  onChange={(e) => setAttendanceFilters({ ...attendanceFilters, endDate: e.target.value, quickFilter: '' })} 
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                />
               </div>
             </>
           ) : activeTab === 'challan' ? (
@@ -698,39 +905,82 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Summary Cards for Bill/Challan */}
-      {(activeTab === 'bill' || activeTab === 'challan') && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-              <BarChart3 size={24} />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Sales</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(
-                  activeTab === 'bill' 
-                    ? billRecords.reduce((sum, r) => sum + (r.grand_total || 0), 0)
-                    : challanRecords.reduce((sum, r) => sum + (r.total_amount || 0), 0)
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-            <div className="p-3 bg-green-50 text-green-600 rounded-xl">
-              <BarChart3 size={24} />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Total Profit</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(
-                  activeTab === 'bill'
-                    ? billRecords.reduce((sum, r) => sum + (r.total_profit || 0), 0)
-                    : challanRecords.reduce((sum, r) => sum + (r.total_profit || 0), 0)
-                )}
-              </p>
-            </div>
-          </div>
+      {/* Summary Cards for Bill/Challan/Attendance */}
+      {(activeTab === 'bill' || activeTab === 'challan' || activeTab === 'attendance') && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {activeTab === 'attendance' ? (
+            <>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                  <BarChart3 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total Katai</p>
+                  <p className="text-2xl font-bold text-gray-900">{attendanceStats.totalKatai}</p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-green-50 text-green-600 rounded-xl">
+                  <BarChart3 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total MTS</p>
+                  <p className="text-2xl font-bold text-green-600">{attendanceStats.totalMts}</p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Calendar size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Present Days</p>
+                  <p className="text-2xl font-bold text-indigo-600">{attendanceStats.presentDays}</p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                  <FileText size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total Hours</p>
+                  <p className="text-2xl font-bold text-purple-600">{attendanceStats.totalHours.toFixed(1)}h</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                  <BarChart3 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total Sales</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {formatCurrency(
+                      activeTab === 'bill' 
+                        ? billRecords.reduce((sum, r) => sum + (r.grand_total || 0), 0)
+                        : challanRecords.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                <div className="p-3 bg-green-50 text-green-600 rounded-xl">
+                  <BarChart3 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total Profit</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency(
+                      activeTab === 'bill'
+                        ? billRecords.reduce((sum, r) => sum + (r.total_profit || 0), 0)
+                        : challanRecords.reduce((sum, r) => sum + (r.total_profit || 0), 0)
+                    )}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -746,6 +996,15 @@ export default function Reports() {
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Shift</th>
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Katai</th>
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">MTR</th>
+                </tr>
+              ) : activeTab === 'attendance' ? (
+                <tr>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee Name</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Shift</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Katai</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">MTS</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Hours Worked</th>
                 </tr>
               ) : activeTab === 'challan' ? (
                 <tr>
@@ -789,14 +1048,14 @@ export default function Reports() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-gray-400" size={32} /></td>
+                  <td colSpan={6} className="px-6 py-12 text-center"><Loader2 className="animate-spin mx-auto text-gray-400" size={32} /></td>
                 </tr>
-              ) : (activeTab === 'katai' ? kataiRecords : activeTab === 'challan' ? challanRecords : activeTab === 'purchase' ? purchaseRecords : activeTab === 'bill' ? billRecords : activeTab === 'purchase_due' ? purchaseDueRecords : salesDueRecords).length === 0 ? (
+              ) : (activeTab === 'katai' ? kataiRecords : activeTab === 'attendance' ? attendanceRecords : activeTab === 'challan' ? challanRecords : activeTab === 'purchase' ? purchaseRecords : activeTab === 'bill' ? billRecords : activeTab === 'purchase_due' ? purchaseDueRecords : salesDueRecords).length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">No records found for the selected filters</td>
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">No records found for the selected filters</td>
                 </tr>
               ) : (
-                (activeTab === 'katai' ? kataiRecords : activeTab === 'challan' ? challanRecords : activeTab === 'purchase' ? purchaseRecords : activeTab === 'bill' ? billRecords : activeTab === 'purchase_due' ? purchaseDueRecords : salesDueRecords).map((r: any) => (
+                (activeTab === 'katai' ? kataiRecords : activeTab === 'attendance' ? attendanceRecords : activeTab === 'challan' ? challanRecords : activeTab === 'purchase' ? purchaseRecords : activeTab === 'bill' ? billRecords : activeTab === 'purchase_due' ? purchaseDueRecords : salesDueRecords).map((r: any) => (
                   <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                     {activeTab === 'katai' ? (
                       <>
@@ -805,6 +1064,15 @@ export default function Reports() {
                         <td className="px-6 py-4 text-sm text-gray-600 capitalize">{r.shift}</td>
                         <td className="px-6 py-4 font-bold text-gray-900">{r.katai}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">{r.mtr_type}</td>
+                      </>
+                    ) : activeTab === 'attendance' ? (
+                      <>
+                        <td className="px-6 py-4 font-medium text-gray-900">{r.employee?.username || r.user_id}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{formatDate(r.date)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 uppercase">{r.shift || '-'}</td>
+                        <td className="px-6 py-4 font-bold text-gray-900">{r.katai || 0}</td>
+                        <td className="px-6 py-4 font-bold text-green-600">{r.mts || 0}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{r.total_hours ? `${r.total_hours} hrs` : '-'}</td>
                       </>
                     ) : activeTab === 'challan' ? (
                       <>
