@@ -41,10 +41,10 @@ export default function PartyLedger() {
   const fetchLedger = async () => {
     setIsLoading(true);
     try {
-      const [purchases, pPayments, bills, sPayments] = await Promise.all([
+      const [purchases, pPayments, challans, sPayments] = await Promise.all([
         supabase.from('purchases').select('*').eq('party_id', selectedPartyId),
         supabase.from('purchase_payments').select('*').eq('party_id', selectedPartyId),
-        supabase.from('bills').select('*').eq('party_id', selectedPartyId),
+        supabase.from('challans').select('*').eq('party_id', selectedPartyId),
         supabase.from('sales_payments').select('*').eq('party_id', selectedPartyId)
       ]);
 
@@ -76,15 +76,15 @@ export default function PartyLedger() {
         });
       });
 
-      // Sales (Credit - they owe us more)
-      bills.data?.forEach(b => {
+      // Sales (Credit - they owe us more) - NOW BASED ON CHALLAN
+      challans.data?.forEach(c => {
         entries.push({
-          id: b.id,
-          date: b.date,
+          id: c.id,
+          date: c.date,
           type: 'Sale',
-          description: `Invoice #${b.bill_no}`,
+          description: `Challan #${c.challan_no}`,
           debit: 0,
-          credit: b.grand_total,
+          credit: c.total_amount,
           balance: 0
         });
       });
@@ -238,10 +238,19 @@ export default function PartyLedger() {
               {!isLoading && ledger.length > 0 && (
                 <tfoot className="bg-gray-50 font-bold">
                   <tr>
-                    <td colSpan={3} className="px-6 py-4 text-right text-gray-900">Totals:</td>
-                    <td className="px-6 py-4 text-right text-red-600">{formatCurrency(partyStats.totalDebit)}</td>
-                    <td className="px-6 py-4 text-right text-green-600">{formatCurrency(partyStats.totalCredit)}</td>
+                    <td colSpan={3} className="px-6 py-4 text-right text-gray-900">
+                      {parties.find(p => p.id === selectedPartyId)?.type === 'sell' 
+                        ? 'Total Challan & Payments:' 
+                        : 'Total Purchases & Payments:'}
+                    </td>
+                    <td className="px-6 py-4 text-right text-red-600" title="Total Payments Received / Purchases">
+                      {formatCurrency(partyStats.totalDebit)}
+                    </td>
+                    <td className="px-6 py-4 text-right text-green-600" title="Total Challan Amount / Payments Made">
+                      {formatCurrency(partyStats.totalCredit)}
+                    </td>
                     <td className={`px-6 py-4 text-right ${partyStats.finalBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <span className="text-xs block text-gray-400 uppercase">Remaining Balance</span>
                       {formatCurrency(Math.abs(partyStats.finalBalance))}
                     </td>
                   </tr>

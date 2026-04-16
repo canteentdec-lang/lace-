@@ -37,11 +37,11 @@ export default function SalesPayments() {
         // For each party, get total sales and total received
         const partiesWithBalances = await Promise.all(partiesData.map(async (party) => {
           const [sales, payments] = await Promise.all([
-            supabase.from('bills').select('grand_total').eq('party_id', party.id),
+            supabase.from('challans').select('total_amount').eq('party_id', party.id),
             supabase.from('sales_payments').select('amount_received').eq('party_id', party.id)
           ]);
 
-          const totalSales = sales.data?.reduce((sum, s) => sum + (s.grand_total || 0), 0) || 0;
+          const totalSales = sales.data?.reduce((sum, s) => sum + (s.total_amount || 0), 0) || 0;
           const totalReceived = payments.data?.reduce((sum, p) => sum + (p.amount_received || 0), 0) || 0;
           const due = totalSales - totalReceived;
 

@@ -135,7 +135,7 @@ export default function DashboardOverview() {
       supabase.from('parties').select('*', { count: 'exact', head: true }),
       supabase.from('products').select('*', { count: 'exact', head: true }),
       supabase.from('attendance').select('katai').eq('date', today),
-      supabase.from('bills').select('grand_total').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
+      supabase.from('challans').select('total_amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
       supabase.from('purchases').select('total_amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
       supabase.from('expenses').select('amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate),
       supabase.from('purchase_payments').select('amount_paid'),
@@ -147,7 +147,7 @@ export default function DashboardOverview() {
     ]);
 
     const todayProd = attToday.data?.reduce((sum, item) => sum + (item.katai || 0), 0) || 0;
-    const totalSales = sales.data?.reduce((sum, item) => sum + (item.grand_total || 0), 0) || 0;
+    const totalSales = sales.data?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
     const totalPurchases = purchases.data?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
     const totalExpenses = expenses.data?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0;
     const totalChallanProfit = challans.data?.reduce((sum, item) => sum + (item.total_profit || 0), 0) || 0;
@@ -178,10 +178,10 @@ export default function DashboardOverview() {
 
     // All-time totals for payable/receivable (not filtered by date range for accurate balance)
     const [allSales, allPurchases] = await Promise.all([
-      supabase.from('bills').select('grand_total'),
+      supabase.from('challans').select('total_amount'),
       supabase.from('purchases').select('total_amount')
     ]);
-    const allSalesTotal = allSales.data?.reduce((sum, item) => sum + (item.grand_total || 0), 0) || 0;
+    const allSalesTotal = allSales.data?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
     const allPurchasesTotal = allPurchases.data?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
 
     setStats({
@@ -243,8 +243,7 @@ export default function DashboardOverview() {
   };
 
   const fetchProfitChartData = async () => {
-    const { data: challans } = await supabase.from('challans').select('date, total_profit').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
-    const { data: sales } = await supabase.from('bills').select('date, grand_total').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
+    const { data: challans } = await supabase.from('challans').select('date, total_amount, total_profit').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     const { data: purchases } = await supabase.from('purchases').select('date, total_amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     const { data: expenses } = await supabase.from('expenses').select('date, amount').gte('date', dateFilter.startDate).lte('date', dateFilter.endDate);
     
@@ -253,11 +252,7 @@ export default function DashboardOverview() {
     challans?.forEach(c => {
       if (!dailyData[c.date]) dailyData[c.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
       dailyData[c.date].profit += c.total_profit || 0;
-    });
-
-    sales?.forEach(s => {
-      if (!dailyData[s.date]) dailyData[s.date] = { sales: 0, cost: 0, profit: 0, expenses: 0 };
-      dailyData[s.date].sales += s.grand_total || 0;
+      dailyData[c.date].sales += c.total_amount || 0;
     });
     
     purchases?.forEach(p => {

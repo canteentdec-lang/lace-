@@ -159,7 +159,7 @@ export default function Reports() {
     const { data: partiesData } = await query;
     if (partiesData) {
       const records = await Promise.all(partiesData.map(async (party) => {
-        let sQuery = supabase.from('bills').select('grand_total').eq('party_id', party.id);
+        let sQuery = supabase.from('challans').select('total_amount').eq('party_id', party.id);
         let recQuery = supabase.from('sales_payments').select('amount_received').eq('party_id', party.id);
         
         if (salesDueFilters.startDate) {
@@ -172,7 +172,7 @@ export default function Reports() {
         }
 
         const [sales, receipts] = await Promise.all([sQuery, recQuery]);
-        const total = sales.data?.reduce((sum, s) => sum + (s.grand_total || 0), 0) || 0;
+        const total = sales.data?.reduce((sum, s) => sum + (s.total_amount || 0), 0) || 0;
         const received = receipts.data?.reduce((sum, p) => sum + (p.amount_received || 0), 0) || 0;
         return { name: party.name, total, received, remaining: total - received };
       }));
